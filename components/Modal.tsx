@@ -4,8 +4,6 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ServerData } from '@/lib/mockData'; // Fix: import dari mockData, bukan supabase
-import CpuChart from './Charts/CpuChart';
-import StorageChart from './Charts/StorageChart';
 
 interface ModalProps {
   isOpen: boolean;
@@ -69,8 +67,6 @@ export default function Modal({ isOpen, onClose, server }: ModalProps) {
               </div>
 
               <div className="space-y-6">
-                <CpuChart />
-                <StorageChart />
               </div>
             </div>
 
