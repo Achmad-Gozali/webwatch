@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
-  const strategy = req.nextUrl.searchParams.get('strategy') || 'desktop';
+
+  // Fix: validasi strategy — hanya terima 'desktop' atau 'mobile'
+  const rawStrategy = req.nextUrl.searchParams.get('strategy');
+  const strategy = rawStrategy === 'mobile' ? 'mobile' : 'desktop';
 
   if (!url) {
     return NextResponse.json({ error: 'URL diperlukan' }, { status: 400 });

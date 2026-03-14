@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Fix: Pakai SERVICE_ROLE_KEY untuk operasi server-side, bukan ANON_KEY
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[WebWatch] SUPABASE_SERVICE_ROLE_KEY tidak ditemukan. Tambahkan di .env.local dan Vercel environment variables.');
 }
@@ -43,20 +42,19 @@ export async function GET(request: Request) {
         responseTime = 0;
       }
 
-      // Simpan ke monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: site.id,
         status,
         response_time: responseTime,
       });
 
-      // Incident tracking
+      // Fix: pakai .maybeSingle() — tidak throw error kalau 0 rows
       const { data: ongoingIncident } = await supabase
         .from('incidents')
         .select('*')
         .eq('website_id', site.id)
         .eq('status', 'ongoing')
-        .single();
+        .maybeSingle();
 
       if (status === 'offline' || status === 'degraded') {
         if (!ongoingIncident) {
@@ -69,7 +67,9 @@ export async function GET(request: Request) {
       } else if (status === 'online' && ongoingIncident) {
         const startedAt = new Date(ongoingIncident.started_at);
         const resolvedAt = new Date();
-        const durationMinutes = Math.round((resolvedAt.getTime() - startedAt.getTime()) / 60000);
+        const durationMinutes = Math.round(
+          (resolvedAt.getTime() - startedAt.getTime()) / 60000
+        );
 
         await supabase
           .from('incidents')

@@ -77,7 +77,6 @@ export default function WebsitesPage() {
     loadWebsites();
   }, [loadUptimes]);
 
-  // Fix: realtime listener untuk uptime
   useEffect(() => {
     if (websites.length === 0) return;
 
@@ -131,7 +130,6 @@ export default function WebsitesPage() {
         status: data.status.toLowerCase(),
         response_time: data.responseTime,
       });
-      // Uptime akan auto-update via realtime listener
     } catch {
       setStatuses((prev) => ({
         ...prev,
@@ -180,8 +178,12 @@ export default function WebsitesPage() {
     setTimeout(() => checkWebsite(data), 100);
   };
 
+  // Fix: hapus monitor_logs & incidents dulu sebelum hapus website (cascade delete manual)
   const removeWebsite = async (id: string) => {
+    await supabase.from('monitor_logs').delete().eq('website_id', id);
+    await supabase.from('incidents').delete().eq('website_id', id);
     await supabase.from('websites').delete().eq('id', id);
+
     setWebsites((prev) => prev.filter((w) => w.id !== id));
     setStatuses((prev) => { const next = { ...prev }; delete next[id]; return next; });
     setUptimes((prev) => { const next = { ...prev }; delete next[id]; return next; });

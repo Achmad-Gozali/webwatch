@@ -1,7 +1,7 @@
 // PATH: components/AiInsights.tsx
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sparkles, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { calculateUptimeBatch } from '@/lib/uptime';
@@ -16,13 +16,14 @@ interface SiteData {
 export default function AiInsights() {
   const [insight, setInsight] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  // Fix: debounce ref untuk hindari spam ke Groq API saat banyak INSERT masuk sekaligus
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchInsight = useCallback(async () => {
     setLoading(true);
     setInsight('');
 
     try {
-      // Fix: baca data dari Supabase, bukan localStorage
       const { data: websites, error } = await supabase
         .from('websites')
         .select('id, name, url');
@@ -30,35 +31,36 @@ export default function AiInsights() {
       let sitesData: SiteData[] = [];
 
       if (!error && websites && websites.length > 0) {
-        // Ambil status terbaru tiap website dari monitor_logs
-        const withStatus = await Promise.all(
-          websites.map(async (site) => {
-            const { data: log } = await supabase
-              .from('monitor_logs')
-              .select('status, response_time')
-              .eq('website_id', site.id)
-              .order('checked_at', { ascending: false })
-              .limit(1)
-              .single();
+        // Fix: batch query status terbaru — 1 query untuk semua website, bukan N+1
+        const { data: logs } = await supabase
+          .from('monitor_logs')
+          .select('website_id, status, response_time, checked_at')
+          .in('website_id', websites.map((w) => w.id))
+          .order('checked_at', { ascending: false });
 
-            return {
-              name: site.name,
-              status: log?.status ?? undefined,
-              responseTime: log?.response_time ?? undefined,
-            };
-          })
-        );
+        // Ambil log terbaru per website
+        const latestByWebsite: Record<string, { status: string; response_time: number }> = {};
+        if (logs) {
+          for (const log of logs) {
+            if (!latestByWebsite[log.website_id]) {
+              latestByWebsite[log.website_id] = {
+                status: log.status,
+                response_time: log.response_time,
+              };
+            }
+          }
+        }
 
-        // Ambil uptime batch
         const ids = websites.map((w) => w.id);
         const uptimes = await calculateUptimeBatch(ids, 30);
 
-        sitesData = withStatus.map((s, i) => ({
-          ...s,
-          uptime: uptimes[websites[i].id] ?? undefined,
+        sitesData = websites.map((site) => ({
+          name: site.name,
+          status: latestByWebsite[site.id]?.status ?? undefined,
+          responseTime: latestByWebsite[site.id]?.response_time ?? undefined,
+          uptime: uptimes[site.id] ?? undefined,
         }));
       } else {
-        // Fallback localStorage kalau Supabase gagal
         const raw = localStorage.getItem('cloudwatch_websites');
         if (raw) {
           const parsed = JSON.parse(raw);
@@ -68,7 +70,6 @@ export default function AiInsights() {
         }
       }
 
-      // Filter yang udah dicek
       const validSites = sitesData.filter(
         (s) => s.status && s.status !== 'undefined' && s.status !== 'checking...'
       );
@@ -109,16 +110,20 @@ export default function AiInsights() {
     return () => clearTimeout(timer);
   }, [fetchInsight]);
 
-  // Realtime: refresh insights kalau ada data baru
+  // Fix: debounce 30 detik — hindari hit Groq API setiap ada INSERT monitor_logs
   useEffect(() => {
     const channel = supabase
       .channel('aiinsights-monitor-logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
-        fetchInsight();
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(fetchInsight, 30000);
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [fetchInsight]);
 
   return (

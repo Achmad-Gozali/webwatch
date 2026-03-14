@@ -70,9 +70,10 @@ export default function Sidebar({ className }: { className?: string }) {
         <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">System Status</span>
+            {/* Fix: ganti teks hardcoded yang misleading → lebih netral */}
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Monitoring Active</span>
           </div>
-          <p className="text-sm text-white font-medium">All systems operational</p>
+          <p className="text-sm text-white font-medium">WebWatch is running</p>
           <div className="mt-3 h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
             <div className="h-full w-full bg-emerald-500" />
           </div>

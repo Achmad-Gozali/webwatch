@@ -16,7 +16,6 @@ interface Website {
 export default function UptimeChart() {
   const [sites, setSites] = useState<Website[]>([]);
 
-  // Fix: wrap loadSites dalam useCallback agar stabil sebagai dependency
   const loadSites = useCallback(async () => {
     const { data: websites, error } = await supabase
       .from('websites')
@@ -28,18 +27,27 @@ export default function UptimeChart() {
       return;
     }
 
-    const withStatus = await Promise.all(
-      websites.map(async (site) => {
-        const { data: log } = await supabase
-          .from('monitor_logs')
-          .select('status')
-          .eq('website_id', site.id)
-          .order('checked_at', { ascending: false })
-          .limit(1)
-          .single();
-        return { ...site, status: log?.status ?? undefined };
-      })
-    );
+    // Fix: 1 batch query untuk semua website, bukan N+1 queries
+    const { data: logs } = await supabase
+      .from('monitor_logs')
+      .select('website_id, status, checked_at')
+      .in('website_id', websites.map((w) => w.id))
+      .order('checked_at', { ascending: false });
+
+    // Ambil status terbaru per website dari hasil batch
+    const latestByWebsite: Record<string, string> = {};
+    if (logs) {
+      for (const log of logs) {
+        if (!latestByWebsite[log.website_id]) {
+          latestByWebsite[log.website_id] = log.status;
+        }
+      }
+    }
+
+    const withStatus: Website[] = websites.map((site) => ({
+      ...site,
+      status: latestByWebsite[site.id] ?? undefined,
+    }));
 
     setSites(withStatus);
     localStorage.setItem('cloudwatch_websites', JSON.stringify(withStatus));

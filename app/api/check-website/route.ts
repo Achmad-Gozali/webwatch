@@ -1,11 +1,30 @@
 // PATH: app/api/check-website/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
+const PRIVATE_IP_REGEX =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|fd[0-9a-f]{2}:)/i;
+
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
 
   if (!url) {
     return NextResponse.json({ error: 'URL diperlukan' }, { status: 400 });
+  }
+
+  // Fix: validasi URL — cegah SSRF ke internal network
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return NextResponse.json({ error: 'URL tidak valid' }, { status: 400 });
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return NextResponse.json({ error: 'Hanya HTTP/HTTPS yang diizinkan' }, { status: 400 });
+  }
+
+  if (PRIVATE_IP_REGEX.test(parsed.hostname)) {
+    return NextResponse.json({ error: 'Akses ke IP privat tidak diizinkan' }, { status: 400 });
   }
 
   const startTime = Date.now();
@@ -34,7 +53,6 @@ export async function GET(req: NextRequest) {
       'permissions-policy': res.headers.get('permissions-policy'),
     };
 
-    // Cek SSL via ssl-checker.io
     let sslValid = false;
     let sslExpiry: string | null = null;
     let sslDaysLeft: number | null = null;
@@ -48,20 +66,25 @@ export async function GET(req: NextRequest) {
         });
         if (sslRes.ok) {
           const sslData = await sslRes.json();
-          sslValid = sslData?.valid ?? true;
+          sslValid = sslData?.valid ?? false;
           sslExpiry = sslData?.validTo ?? null;
           sslIssuer = sslData?.issuer ?? null;
 
           if (sslExpiry) {
             const expDate = new Date(sslExpiry);
             const now = new Date();
-            sslDaysLeft = Math.max(0, Math.floor((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            sslDaysLeft = Math.max(
+              0,
+              Math.floor((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            );
           }
         } else {
-          sslValid = true;
+          // Fix: fallback false — jangan misleading valid kalau API gagal
+          sslValid = false;
         }
       } catch {
-        sslValid = true;
+        // Fix: fallback false, bukan true
+        sslValid = false;
       }
     }
 
@@ -76,7 +99,6 @@ export async function GET(req: NextRequest) {
       sslDaysLeft,
       sslIssuer,
       headers: securityHeaders,
-      // Fix: hapus uptime hardcoded 99.9 — uptime dihitung dari monitor_logs via lib/uptime.ts
       checkedAt: new Date().toISOString(),
     });
   } catch (error: unknown) {

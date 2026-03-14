@@ -14,7 +14,6 @@ const NOTIF_KEY = 'webwatch_notifications';
 const PROFILE_KEY = 'webwatch_profile';
 const STORAGE_KEY = 'cloudwatch_websites';
 
-// Separate portal component — lives outside AnimatePresence
 function NotifDropdown({ notifications, onClear, onClose, bellRef }: {
   notifications: Notification[];
   onClear: () => void;
@@ -39,9 +38,7 @@ function NotifDropdown({ notifications, onClear, onClose, bellRef }: {
 
   return createPortal(
     <>
-      {/* backdrop */}
       <div className="fixed inset-0 z-[998]" onClick={onClose} />
-      {/* dropdown */}
       <motion.div
         initial={{ opacity: 0, y: 8, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -151,7 +148,9 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
         prevStatusesRef.current[site.id] = curr;
       });
     };
-    const interval = setInterval(checkStatuses, 3000);
+
+    // Fix: naikkan interval dari 3s ke 15s — kurangi pembacaan & parsing localStorage
+    const interval = setInterval(checkStatuses, 15000);
     checkStatuses();
     return () => clearInterval(interval);
   }, [addNotification]);
@@ -213,7 +212,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Desktop filter */}
         {pathname === '/' && (
           <div className="hidden sm:flex items-center bg-zinc-900 border border-white/5 rounded-full p-1">
             {(['All', 'Online', 'Offline'] as string[]).map((f) => (
@@ -226,7 +224,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
         )}
 
         <div className="flex items-center gap-2">
-          {/* Search */}
           <div className="relative flex items-center">
             <AnimatePresence>
               {isSearchOpen && (
@@ -241,7 +238,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
             </button>
           </div>
 
-          {/* Bell */}
           <div className="relative">
             <button
               ref={bellRef}
@@ -255,7 +251,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
               )}
             </button>
 
-            {/* Portal dropdown — completely outside header DOM */}
             <AnimatePresence>
               {isNotifOpen && mounted && (
                 <NotifDropdown
@@ -270,7 +265,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
 
           <div className="h-6 w-px bg-white/5" />
 
-          {/* Profile */}
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-emerald-500/10">
               {initials}

@@ -11,7 +11,6 @@ export default function ResponseTimeChart() {
   const [avgNow, setAvgNow] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
-    // Ambil 10 monitor_logs terbaru dari semua website
     const { data: logs, error } = await supabase
       .from('monitor_logs')
       .select('response_time, checked_at, status')
@@ -20,7 +19,6 @@ export default function ResponseTimeChart() {
       .limit(50);
 
     if (error || !logs || logs.length === 0) {
-      // Fallback localStorage
       const raw = localStorage.getItem('webwatch_response_history');
       if (!raw) return;
       const history = JSON.parse(raw);
@@ -38,7 +36,6 @@ export default function ResponseTimeChart() {
       return;
     }
 
-    // Group by waktu (per 5 menit) dan hitung avg
     const grouped: Record<string, number[]> = {};
     logs.forEach((log) => {
       const time = new Date(log.checked_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -61,7 +58,6 @@ export default function ResponseTimeChart() {
   useEffect(() => {
     loadData();
 
-    // Realtime — auto update kalau ada log baru
     const channel = supabase
       .channel('response-time-logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
@@ -69,13 +65,20 @@ export default function ResponseTimeChart() {
       })
       .subscribe();
 
-    window.addEventListener('focus', loadData);
-    document.addEventListener('visibilitychange', loadData);
+    const handleFocus = () => loadData();
+
+    // Fix: hanya load saat tab aktif (visible), bukan saat disembunyikan
+    const handleVisibility = () => {
+      if (!document.hidden) loadData();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       supabase.removeChannel(channel);
-      window.removeEventListener('focus', loadData);
-      document.removeEventListener('visibilitychange', loadData);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadData]);
 
@@ -114,8 +117,10 @@ export default function ResponseTimeChart() {
             </defs>
             <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#52525b' }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 9, fill: '#52525b' }} tickLine={false} axisLine={false} unit="ms" />
-            <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
-              formatter={(value: unknown) => [`${value}ms`, 'Avg']} />
+            <Tooltip
+              contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
+              formatter={(value: unknown) => [`${value}ms`, 'Avg']}
+            />
             <Area type="monotone" dataKey="avg" stroke={color} strokeWidth={2} fill="url(#rtGrad)" dot={false} />
           </AreaChart>
         </ResponsiveContainer>

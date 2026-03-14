@@ -56,7 +56,6 @@ function WebsiteListContent() {
     if (websites.length > 0) loadUptimes(websites);
   }, [websites, loadUptimes]);
 
-  // Realtime: auto update uptime kalau ada data baru di monitor_logs
   useEffect(() => {
     if (websites.length === 0) return;
 
@@ -66,7 +65,6 @@ function WebsiteListContent() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'monitor_logs' },
         () => {
-          // Ada data baru masuk → recalculate uptime otomatis
           loadUptimes(websites);
         }
       )
@@ -79,14 +77,30 @@ function WebsiteListContent() {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
     setStatuses((prev) => ({
       ...prev,
-      [website.id]: { ...prev[website.id], status: 'Checking...', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() },
+      [website.id]: {
+        ...prev[website.id],
+        status: 'Checking...',
+        responseTime: 0,
+        isSSL: website.url.startsWith('https://'),
+        sslValid: false,
+        checkedAt: new Date().toISOString(),
+      },
     }));
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
       setStatuses((prev) => ({ ...prev, [website.id]: data }));
     } catch {
-      setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() } }));
+      setStatuses((prev) => ({
+        ...prev,
+        [website.id]: {
+          status: 'Offline',
+          responseTime: 0,
+          isSSL: website.url.startsWith('https://'),
+          sslValid: false,
+          checkedAt: new Date().toISOString(),
+        },
+      }));
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
@@ -183,7 +197,6 @@ function WebsiteListContent() {
                 isChecking={checking[website.id]}
                 index={index}
                 searchQuery={searchQuery}
-                onCheck={() => checkWebsite(website)}
                 onClick={() => router.push('/websites')}
               />
             ))}
@@ -240,16 +253,28 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   );
 }
 
+// Fix: hapus prop onCheck yang tidak pernah dipakai di JSX
 function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery, onClick }: {
-  website: Website; status?: WebsiteStatus; uptime: number | null; isChecking?: boolean; index: number;
-  searchQuery?: string; onCheck: () => void; onClick: () => void;
+  website: Website;
+  status?: WebsiteStatus;
+  uptime: number | null;
+  isChecking?: boolean;
+  index: number;
+  searchQuery?: string;
+  onClick: () => void;
 }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ y: -2 }}
-      onClick={onClick} className={`group cursor-pointer bg-zinc-900/40 border border-white/5 rounded-2xl p-4 lg:px-6 transition-all duration-300 ${
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+      whileHover={{ y: -2 }}
+      onClick={onClick}
+      className={`group cursor-pointer bg-zinc-900/40 border border-white/5 rounded-2xl p-4 lg:px-6 transition-all duration-300 ${
         s?.status === 'Online' ? 'hover:border-emerald-500/50 hover:shadow-[0_0_20px_rgba(16,185,129,0.1)]' :
         s?.status === 'Offline' ? 'hover:border-rose-500/50 hover:shadow-[0_0_20px_rgba(244,63,94,0.1)]' : 'hover:border-white/10'
-      }`}>
+      }`}
+    >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
         <div className="lg:col-span-4 flex items-center gap-4">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s?.status === 'Online' ? 'bg-emerald-500/10 text-emerald-500' : s?.status === 'Offline' ? 'bg-rose-500/10 text-rose-500' : 'bg-zinc-800 text-zinc-400'}`}>

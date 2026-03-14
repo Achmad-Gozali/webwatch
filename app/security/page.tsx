@@ -90,10 +90,11 @@ function getScoreColor(score: number) {
   return 'text-rose-400';
 }
 
-function getScoreBg(score: number) {
-  if (score >= 80) return 'bg-emerald-500';
-  if (score >= 50) return 'bg-amber-500';
-  return 'bg-rose-500';
+// Fix: pakai inline style untuk background opacity — hindari dynamic Tailwind class yang di-purge
+function getScoreBadgeStyle(score: number): React.CSSProperties {
+  if (score >= 80) return { backgroundColor: 'rgba(16,185,129,0.15)' };
+  if (score >= 50) return { backgroundColor: 'rgba(245,158,11,0.15)' };
+  return { backgroundColor: 'rgba(244,63,94,0.15)' };
 }
 
 function getScoreLabel(score: number) {
@@ -137,7 +138,6 @@ export default function SecurityPage() {
     }
   }, []);
 
-  // Fix: tambahkan checkSecurity ke dependency array dengan cleanup flag
   useEffect(() => {
     let cancelled = false;
 
@@ -239,8 +239,12 @@ export default function SecurityPage() {
                       <div>
                         <div className="flex items-center gap-3">
                           <h3 className="text-lg font-bold text-white">{website.name}</h3>
+                          {/* Fix: pakai inline style untuk background — hindari dynamic class Tailwind */}
                           {score !== null && (
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getScoreBg(score)}/20 ${getScoreColor(score)}`}>
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded-full ${getScoreColor(score)}`}
+                              style={getScoreBadgeStyle(score)}
+                            >
                               {getScoreLabel(score)} · {score}/100
                             </span>
                           )}
@@ -277,7 +281,9 @@ export default function SecurityPage() {
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-zinc-500">Status</span>
                               <div className="flex items-center gap-1.5">
-                                {website.ssl.valid ? <CheckCircle className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400" />}
+                                {website.ssl.valid
+                                  ? <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                  : <XCircle className="w-4 h-4 text-rose-400" />}
                                 <span className={`text-sm font-bold ${website.ssl.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
                                   {website.ssl.valid ? 'Valid' : 'Invalid'}
                                 </span>
@@ -307,8 +313,10 @@ export default function SecurityPage() {
                             {website.ssl.daysLeft !== null && (
                               <div>
                                 <div className="h-1.5 w-full bg-zinc-700 rounded-full overflow-hidden mt-2">
-                                  <div className={`h-full rounded-full ${getSSLBg(website.ssl.daysLeft)}`}
-                                    style={{ width: `${Math.min(100, (website.ssl.daysLeft / 90) * 100)}%` }} />
+                                  <div
+                                    className={`h-full rounded-full ${getSSLBg(website.ssl.daysLeft)}`}
+                                    style={{ width: `${Math.min(100, (website.ssl.daysLeft / 90) * 100)}%` }}
+                                  />
                                 </div>
                                 <p className="text-[10px] text-zinc-600 mt-1">dari 90 hari</p>
                               </div>

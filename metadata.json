@@ -1,5 +1,5 @@
 {
-  "name": "CloudWatch Pro - Server Monitoring",
-  "description": "Dashboard monitoring server dan cloud futuristik dengan analisis AI.",
+  "name": "WebWatch - Website Monitoring",
+  "description": "Monitor uptime, response time, SSL, dan performa website secara realtime.",
   "requestFramePermissions": []
 }
