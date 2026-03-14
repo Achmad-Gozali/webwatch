@@ -1,20 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Interface untuk data server sesuai request
-export interface ServerData {
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Types
+export interface Website {
   id: string;
   name: string;
-  ip_address: string;
-  status: 'Online' | 'Offline';
-  os: string;
-  uptime: string;
-  cpu_usage?: number;
-  memory_usage?: number;
-  region?: string;
+  url: string;
+  created_at: string;
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xyzdummy.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-anon-key';
-
-// Inisialisasi Supabase Client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export interface MonitorLog {
+  id: string;
+  website_id: string;
+  status: 'online' | 'offline' | 'degraded';
+  response_time: number;
+  checked_at: string;
+}
