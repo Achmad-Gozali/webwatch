@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield, ArrowUpRight, CheckCircle, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '@/lib/supabase';
 import { getUptimeColor, getUptimeBg } from '@/lib/uptime';
 
 interface Website {
@@ -39,7 +40,6 @@ function WebsiteListContent() {
     if (saved) setWebsites(JSON.parse(saved));
   }, []);
 
-  // Fix: load uptime akurat dari monitor_logs
   const loadUptimes = useCallback(async (sites: Website[]) => {
     if (sites.length === 0) return;
     const ids = sites.map((w) => w.id).join(',');
@@ -56,6 +56,25 @@ function WebsiteListContent() {
     if (websites.length > 0) loadUptimes(websites);
   }, [websites, loadUptimes]);
 
+  // Realtime: auto update uptime kalau ada data baru di monitor_logs
+  useEffect(() => {
+    if (websites.length === 0) return;
+
+    const channel = supabase
+      .channel('websitelist-monitor-logs')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'monitor_logs' },
+        () => {
+          // Ada data baru masuk → recalculate uptime otomatis
+          loadUptimes(websites);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [websites, loadUptimes]);
+
   const checkWebsite = useCallback(async (website: Website) => {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
     setStatuses((prev) => ({
@@ -66,11 +85,6 @@ function WebsiteListContent() {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
       setStatuses((prev) => ({ ...prev, [website.id]: data }));
-
-      // Refresh uptime setelah cek
-      const uptimeRes = await fetch(`/api/uptime?websiteIds=${website.id}&days=30`);
-      const uptimeData = await uptimeRes.json();
-      if (uptimeData.uptimes) setUptimes((prev) => ({ ...prev, ...uptimeData.uptimes }));
     } catch {
       setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() } }));
     } finally {
@@ -260,7 +274,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
           <Clock className="w-3.5 h-3.5" />
           <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
         </div>
-        {/* Fix: uptime akurat dari monitor_logs */}
         <div className="lg:col-span-3">
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
