@@ -1,98 +1,61 @@
 // PATH: app/page.tsx
-'use client';
+import { createClient } from '@supabase/supabase-js';
+import LandingClient from '@/components/LandingClient';
 
-import React, { useState } from 'react';
-import Sidebar from '@/components/Sidebar';
-import Header from '@/components/Header';
-import ResponseTimeChart from '@/components/Charts/ResponseTimeChart';
-import UptimeChart from '@/components/Charts/UptimeChart';
-import AiInsights from '@/components/AiInsights';
-import WebsiteList from '@/components/WebsiteList';
-import { motion, AnimatePresence } from 'motion/react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+async function getData() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-function FilterBar() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const currentStatus = searchParams.get('status') ?? 'all';
-  const filters = ['All', 'Online', 'Offline'];
+  const [{ data: websites }, { data: logs }, { data: incidents }] = await Promise.all([
+    supabase.from('websites').select('id, name, url').order('created_at', { ascending: true }),
+    supabase.from('monitor_logs')
+      .select('website_id, status, response_time, checked_at')
+      .order('checked_at', { ascending: false })
+      .limit(300),
+    supabase.from('incidents').select('id, status'),
+  ]);
 
-  const handleFilter = (f: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    const val = f.toLowerCase();
-    if (val === 'all') params.delete('status'); else params.set('status', val);
-    router.push(`/?${params.toString()}`);
+  const websiteStats = (websites ?? []).map((site) => {
+    const siteLogs = (logs ?? []).filter((l) => l.website_id === site.id);
+    const latest = siteLogs[0];
+    const last30 = new Date();
+    last30.setDate(last30.getDate() - 30);
+    const recentLogs = siteLogs.filter((l) => new Date(l.checked_at) >= last30);
+    const uptime = recentLogs.length > 0
+      ? parseFloat(((recentLogs.filter((l) => l.status === 'online').length / recentLogs.length) * 100).toFixed(1))
+      : 100;
+    return {
+      id: site.id,
+      name: site.name,
+      url: site.url,
+      status: latest?.status ?? 'unknown',
+      responseTime: latest?.status !== 'offline' ? (latest?.response_time ?? null) : null,
+      uptime,
+    };
+  });
+
+  const onlineCount = websiteStats.filter((w) => w.status === 'online').length;
+  const avgUptime = websiteStats.length > 0
+    ? parseFloat((websiteStats.reduce((a, b) => a + b.uptime, 0) / websiteStats.length).toFixed(1))
+    : 100;
+  const resolvedIncidents = (incidents ?? []).filter((i) => i.status === 'resolved').length;
+
+  return {
+    websites: websiteStats,
+    stats: {
+      total: websiteStats.length,
+      online: onlineCount,
+      avgUptime,
+      resolvedIncidents,
+    },
   };
-
-  const isActive = (f: string) => f === 'All' ? currentStatus === 'all' : currentStatus === f.toLowerCase();
-
-  return (
-    <div className="sm:hidden w-full overflow-x-auto scrollbar-none px-4 pb-2">
-      <div className="flex items-center gap-2 w-max">
-        {filters.map((f) => (
-          <button key={f} onClick={() => handleFilter(f)}
-            className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
-              isActive(f)
-                ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20'
-                : 'bg-zinc-900 text-zinc-400 border-white/5 hover:text-white'
-            }`}>
-            {f}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
-export default function Dashboard() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  return (
-    <div className="flex min-h-screen bg-zinc-950 text-white font-sans selection:bg-emerald-500/30">
-      <Sidebar
-        className={`fixed lg:sticky lg:flex z-50 transition-transform duration-300 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-        onClose={() => setSidebarOpen(false)}
-      />
-
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header onMenuClick={() => setSidebarOpen(true)} />
-        <Suspense fallback={null}><FilterBar /></Suspense>
-
-        <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="space-y-6"
-          >
-            {/* Charts & AI Insights — stack di mobile, 3 kolom di desktop */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              <ResponseTimeChart />
-              <UptimeChart />
-              <div className="md:col-span-2 lg:col-span-1">
-                <AiInsights />
-              </div>
-            </div>
-
-            <WebsiteList />
-          </motion.div>
-        </div>
-      </main>
-    </div>
-  );
+export default async function HomePage() {
+  const data = await getData();
+  return <LandingClient data={data} />;
 }
+
+export const revalidate = 300;

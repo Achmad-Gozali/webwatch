@@ -1,12 +1,18 @@
 // PATH: app/status/StatusClient.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { createClient } from '@supabase/supabase-js';
 import {
   CheckCircle, XCircle, AlertCircle, Globe, Clock,
   RefreshCw, Activity, Shield, ChevronDown, ChevronUp,
 } from 'lucide-react';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 interface WebsiteStat {
   id: string;
@@ -26,12 +32,6 @@ interface Incident {
   duration_minutes: number | null;
   status: 'ongoing' | 'resolved';
   websites?: { name: string; url: string };
-}
-
-interface StatusData {
-  websites: WebsiteStat[];
-  incidents: Incident[];
-  lastUpdated: string;
 }
 
 function getStatusColor(status: string) {
@@ -75,14 +75,97 @@ function formatDuration(minutes: number | null) {
   return m > 0 ? `${h}j ${m}m` : `${h} jam`;
 }
 
-export default function StatusClient({ data }: { data: StatusData }) {
-  const [now, setNow] = useState(new Date());
+async function fetchStatusData() {
+  const [{ data: websites }, { data: incidents }, { data: logs }] = await Promise.all([
+    supabase.from('websites').select('id, name, url').order('created_at', { ascending: true }),
+    supabase.from('incidents').select('*, websites(name, url)').order('started_at', { ascending: false }).limit(10),
+    supabase.from('monitor_logs').select('website_id, status, response_time, checked_at')
+      .order('checked_at', { ascending: false }).limit(500),
+  ]);
+
+  const websiteStats: WebsiteStat[] = (websites ?? []).map((site) => {
+    const siteLogs = (logs ?? []).filter((l) => l.website_id === site.id);
+    const latest = siteLogs[0];
+    const last30Days = new Date();
+    last30Days.setDate(last30Days.getDate() - 30);
+    const recentLogs = siteLogs.filter((l) => new Date(l.checked_at) >= last30Days);
+    const uptime = recentLogs.length > 0
+      ? parseFloat(((recentLogs.filter((l) => l.status === 'online').length / recentLogs.length) * 100).toFixed(2))
+      : 100;
+
+    const now = new Date();
+    const slots = Array.from({ length: 45 }, (_, i) => {
+      const slotEnd = new Date(now.getTime() - i * 16 * 60 * 60 * 1000);
+      const slotStart = new Date(slotEnd.getTime() - 16 * 60 * 60 * 1000);
+      const slotLogs = siteLogs.filter((l) => {
+        const t = new Date(l.checked_at);
+        return t >= slotStart && t <= slotEnd;
+      });
+      if (slotLogs.length === 0) return 'unknown';
+      if (slotLogs.some((l) => l.status === 'offline')) return 'offline';
+      if (slotLogs.some((l) => l.status === 'degraded')) return 'degraded';
+      return 'online';
+    }).reverse();
+
+    return {
+      ...site,
+      status: latest?.status ?? 'unknown',
+      responseTime: latest?.status !== 'offline' ? (latest?.response_time ?? null) : null,
+      uptime,
+      slots,
+    };
+  });
+
+  return {
+    websites: websiteStats,
+    incidents: (incidents ?? []) as Incident[],
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+export default function StatusClient() {
+  const [data, setData] = useState<{ websites: WebsiteStat[]; incidents: Incident[]; lastUpdated: string } | null>(null);
   const [expandedIncidents, setExpandedIncidents] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadData = useCallback(async () => {
+    const result = await fetchStatusData();
+    setData(result);
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadData();
+    setIsRefreshing(false);
+  };
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(t);
-  }, []);
+    loadData();
+
+    // Realtime subscription — auto update saat ada log baru
+    const channel = supabase
+      .channel('status-page-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [loadData]);
+
+  if (!data) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-zinc-500">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Memuat data...</span>
+        </div>
+      </div>
+    );
+  }
 
   const onlineCount = data.websites.filter((w) => w.status === 'online').length;
   const degradedCount = data.websites.filter((w) => w.status === 'degraded').length;
@@ -99,7 +182,6 @@ export default function StatusClient({ data }: { data: StatusData }) {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Subtle grid background */}
       <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] pointer-events-none" />
 
       <div className="relative max-w-3xl mx-auto px-4 py-12 lg:py-20 space-y-10">
@@ -114,14 +196,19 @@ export default function StatusClient({ data }: { data: StatusData }) {
           </div>
 
           <h1 className="text-3xl lg:text-4xl font-bold text-white">Status Page</h1>
-          <p className="text-zinc-500 text-sm">
-            Real-time monitoring status semua layanan
-          </p>
+          <p className="text-zinc-500 text-sm">Real-time monitoring status semua layanan</p>
 
-          {/* Last updated */}
-          <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-600">
-            <RefreshCw className="w-3 h-3" />
-            Last updated: {formatDate(data.lastUpdated)}
+          <div className="flex items-center justify-center gap-3 text-xs text-zinc-600">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live — update otomatis</span>
+            </div>
+            <span>·</span>
+            <span>Last updated: {formatDate(data.lastUpdated)}</span>
+            <button onClick={handleRefresh} disabled={isRefreshing}
+              className="p-1 hover:text-zinc-400 transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
           </div>
         </motion.div>
 
@@ -167,54 +254,46 @@ export default function StatusClient({ data }: { data: StatusData }) {
               <Activity className="w-8 h-8 text-zinc-700 mb-3" />
               <p className="text-zinc-500 text-sm">Belum ada layanan yang dimonitor</p>
             </div>
-          ) : (
-            data.websites.map((website, index) => (
-              <motion.div key={website.id}
-                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + index * 0.04 }}
-                className="bg-zinc-900/60 border border-white/5 rounded-2xl p-4 lg:p-5 hover:border-white/10 transition-all">
+          ) : data.websites.map((website, index) => (
+            <motion.div key={website.id}
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + index * 0.04 }}
+              className="bg-zinc-900/60 border border-white/5 rounded-2xl p-4 lg:p-5 hover:border-white/10 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${getStatusBg(website.status)} ${website.status === 'online' ? 'animate-pulse' : ''}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-white text-sm">{website.name}</span>
+                    <span className={`text-xs font-bold capitalize ${getStatusColor(website.status)}`}>
+                      {website.status === 'online' ? '● Online'
+                        : website.status === 'degraded' ? '⚠ Degraded'
+                        : website.status === 'offline' ? '✕ Offline' : '— Unknown'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 font-mono truncate">{website.url}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={`text-sm font-bold ${getUptimeColor(website.uptime)}`}>{website.uptime}%</p>
+                  <p className="text-[10px] text-zinc-600">uptime</p>
+                </div>
+              </div>
 
-                {/* Top row */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${getStatusBg(website.status)} ${website.status === 'online' ? 'animate-pulse' : ''}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-white text-sm">{website.name}</span>
-                      <span className={`text-xs font-bold capitalize ${getStatusColor(website.status)}`}>
-                        {website.status === 'online' ? '● Online' : website.status === 'degraded' ? '⚠ Degraded' : website.status === 'offline' ? '✕ Offline' : '— Unknown'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-500 font-mono truncate">{website.url}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${getUptimeColor(website.uptime)}`}>{website.uptime}%</p>
-                    <p className="text-[10px] text-zinc-600">uptime</p>
-                  </div>
+              <div className="flex items-center gap-0.5">
+                {website.slots.map((slot, i) => (
+                  <div key={i} title={slot}
+                    className={`flex-1 h-6 lg:h-7 rounded-sm transition-all hover:opacity-70 cursor-default ${getSlotColor(slot)}`} />
+                ))}
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] text-zinc-600">30 hari lalu</span>
+                <div className="flex items-center gap-1 text-[10px] text-zinc-600">
+                  {website.responseTime !== null && (
+                    <><Clock className="w-2.5 h-2.5" />{website.responseTime}ms</>
+                  )}
                 </div>
-
-                {/* Timeline slots */}
-                <div className="flex items-center gap-0.5">
-                  {website.slots.map((slot, i) => (
-                    <div key={i}
-                      title={slot}
-                      className={`flex-1 h-6 lg:h-7 rounded-sm transition-all hover:opacity-70 cursor-default ${getSlotColor(slot)}`}
-                    />
-                  ))}
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-[10px] text-zinc-600">30 hari lalu</span>
-                  <div className="flex items-center gap-1 text-[10px] text-zinc-600">
-                    {website.responseTime !== null && (
-                      <>
-                        <Clock className="w-2.5 h-2.5" />
-                        {website.responseTime}ms
-                      </>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-zinc-600">Sekarang</span>
-                </div>
-              </motion.div>
-            ))
-          )}
+                <span className="text-[10px] text-zinc-600">Sekarang</span>
+              </div>
+            </motion.div>
+          ))}
         </motion.div>
 
         {/* Legend */}
@@ -295,9 +374,6 @@ export default function StatusClient({ data }: { data: StatusData }) {
             <Shield className="w-3.5 h-3.5" />
             <span className="text-xs">Powered by WebWatch</span>
           </div>
-          <p className="text-[10px] text-zinc-700">
-            Data diperbarui otomatis tiap 5 menit via GitHub Actions
-          </p>
         </div>
       </div>
     </div>

@@ -1,0 +1,17 @@
+User-agent: *
+
+# Halaman publik — boleh diindex
+Allow: /
+Allow: /status
+
+# Halaman dashboard — jangan diindex
+Disallow: /dashboard
+Disallow: /websites
+Disallow: /monitoring
+Disallow: /performance
+Disallow: /security
+Disallow: /incidents
+Disallow: /help
+Disallow: /api/
+
+Sitemap: https://webwatch-id.vercel.app/sitemap.xml

@@ -174,11 +174,12 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
   const routeLabels: Record<string, string> = {
     'cloud-services': 'Performance',
     'performance': 'Performance',
+    'dashboard': 'Overview',
     'help': 'Help',
   };
 
   const getBreadcrumbs = () => {
-    if (pathname === '/') return ['Dashboard', 'Overview'];
+    if (pathname === '/' || pathname === '/dashboard') return ['Dashboard', 'Overview'];
     const parts = pathname.split('/').filter(Boolean);
     return ['Dashboard', ...parts.map((p) => routeLabels[p] ?? p.charAt(0).toUpperCase() + p.slice(1).replace(/-/g, ' '))];
   };
@@ -187,7 +188,7 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
     const params = new URLSearchParams(searchParams.toString());
     const val = status.toLowerCase();
     if (val === 'all') params.delete('status'); else params.set('status', val);
-    router.push(`/?${params.toString()}`);
+    router.push(`/dashboard?${params.toString()}`);
   };
 
   const isFilterActive = (f: string) =>

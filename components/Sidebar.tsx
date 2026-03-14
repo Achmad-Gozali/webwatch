@@ -12,7 +12,7 @@ import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
+  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Zap, label: 'Performance', href: '/performance' },
   { icon: Activity, label: 'Monitoring', href: '/monitoring' },
   { icon: Globe, label: 'Websites', href: '/websites' },
@@ -31,7 +31,6 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 
   return (
     <aside className={cn('w-64 bg-zinc-950 border-r border-white/5 flex flex-col h-screen sticky top-0', className)}>
-      {/* Logo + Close button (mobile) */}
       <div className="p-5 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3 group" onClick={onClose}>
           <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)] group-hover:scale-110 transition-transform">
@@ -41,12 +40,9 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
             WebWatch
           </h1>
         </Link>
-        {/* Tombol X — hanya muncul di mobile */}
         {onClose && (
-          <button
-            onClick={onClose}
-            className="lg:hidden p-2 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors"
-          >
+          <button onClick={onClose}
+            className="lg:hidden p-2 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         )}
@@ -57,15 +53,13 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
           const isActive = pathname === item.href;
           return (
             <Link key={item.label} href={item.href} onClick={onClose}>
-              <motion.div
-                whileHover={{ x: 4 }}
+              <motion.div whileHover={{ x: 4 }}
                 className={cn(
                   'w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group cursor-pointer',
                   isActive
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                     : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-                )}
-              >
+                )}>
                 <div className="flex items-center gap-3">
                   <item.icon className={cn('w-5 h-5', isActive ? 'text-emerald-400' : 'group-hover:text-white')} />
                   <span className="font-medium">{item.label}</span>

@@ -1,0 +1,19 @@
+name: WebWatch - Weekly Summary
+
+on:
+  schedule:
+    - cron: '0 1 * * 1' # Setiap Senin jam 08.00 WIB (01.00 UTC)
+  workflow_dispatch: # Bisa dijalankan manual
+
+jobs:
+  weekly-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Weekly Summary
+        run: |
+          curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/weekly-summary" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --fail \
+            --silent \
+            --show-error
