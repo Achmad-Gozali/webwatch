@@ -5,14 +5,8 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
-  ShieldCheck,
-  HelpCircle,
-  Activity,
-  ChevronRight,
-  Globe,
-  Zap,
-  AlertTriangle,
+  LayoutDashboard, ShieldCheck, HelpCircle, Activity,
+  ChevronRight, Globe, Zap, AlertTriangle, X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -27,13 +21,19 @@ const menuItems = [
   { icon: HelpCircle, label: 'Help', href: '/help' },
 ];
 
-export default function Sidebar({ className }: { className?: string }) {
+interface SidebarProps {
+  className?: string;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ className, onClose }: SidebarProps) {
   const pathname = usePathname();
 
   return (
     <aside className={cn('w-64 bg-zinc-950 border-r border-white/5 flex flex-col h-screen sticky top-0', className)}>
-      <div className="p-6 flex items-center gap-3">
-        <Link href="/" className="flex items-center gap-3 group">
+      {/* Logo + Close button (mobile) */}
+      <div className="p-5 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-3 group" onClick={onClose}>
           <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)] group-hover:scale-110 transition-transform">
             <Globe className="text-white w-5 h-5" />
           </div>
@@ -41,20 +41,31 @@ export default function Sidebar({ className }: { className?: string }) {
             WebWatch
           </h1>
         </Link>
+        {/* Tombol X — hanya muncul di mobile */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden p-2 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-1">
+      <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
         {menuItems.map((item) => {
           const isActive = pathname === item.href;
           return (
-            <Link key={item.label} href={item.href}>
-              <motion.div whileHover={{ x: 4 }}
+            <Link key={item.label} href={item.href} onClick={onClose}>
+              <motion.div
+                whileHover={{ x: 4 }}
                 className={cn(
                   'w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group cursor-pointer',
                   isActive
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                     : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-                )}>
+                )}
+              >
                 <div className="flex items-center gap-3">
                   <item.icon className={cn('w-5 h-5', isActive ? 'text-emerald-400' : 'group-hover:text-white')} />
                   <span className="font-medium">{item.label}</span>
@@ -70,7 +81,6 @@ export default function Sidebar({ className }: { className?: string }) {
         <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            {/* Fix: ganti teks hardcoded yang misleading → lebih netral */}
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Monitoring Active</span>
           </div>
           <p className="text-sm text-white font-medium">WebWatch is running</p>

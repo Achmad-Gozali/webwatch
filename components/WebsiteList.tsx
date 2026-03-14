@@ -3,17 +3,15 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield, ArrowUpRight, CheckCircle, WifiOff } from 'lucide-react';
+import {
+  Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield,
+  ArrowUpRight, CheckCircle, WifiOff, Activity,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { getUptimeColor, getUptimeBg } from '@/lib/uptime';
 
-interface Website {
-  id: string;
-  name: string;
-  url: string;
-}
-
+interface Website { id: string; name: string; url: string; }
 interface WebsiteStatus {
   status: 'Online' | 'Offline' | 'Degraded' | 'Checking...';
   responseTime: number;
@@ -47,9 +45,7 @@ function WebsiteListContent() {
       const res = await fetch(`/api/uptime?websiteIds=${ids}&days=30`);
       const data = await res.json();
       if (data.uptimes) setUptimes(data.uptimes);
-    } catch {
-      console.error('Gagal load uptime');
-    }
+    } catch { console.error('Gagal load uptime'); }
   }, []);
 
   useEffect(() => {
@@ -58,18 +54,12 @@ function WebsiteListContent() {
 
   useEffect(() => {
     if (websites.length === 0) return;
-
     const channel = supabase
       .channel('websitelist-monitor-logs')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'monitor_logs' },
-        () => {
-          loadUptimes(websites);
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadUptimes(websites);
+      })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [websites, loadUptimes]);
 
@@ -77,30 +67,14 @@ function WebsiteListContent() {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
     setStatuses((prev) => ({
       ...prev,
-      [website.id]: {
-        ...prev[website.id],
-        status: 'Checking...',
-        responseTime: 0,
-        isSSL: website.url.startsWith('https://'),
-        sslValid: false,
-        checkedAt: new Date().toISOString(),
-      },
+      [website.id]: { ...prev[website.id], status: 'Checking...', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() },
     }));
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
       setStatuses((prev) => ({ ...prev, [website.id]: data }));
     } catch {
-      setStatuses((prev) => ({
-        ...prev,
-        [website.id]: {
-          status: 'Offline',
-          responseTime: 0,
-          isSSL: website.url.startsWith('https://'),
-          sslValid: false,
-          checkedAt: new Date().toISOString(),
-        },
-      }));
+      setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() } }));
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
@@ -110,10 +84,7 @@ function WebsiteListContent() {
     if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
   }, [websites.length]); // eslint-disable-line
 
-  const checkAll = () => {
-    websites.forEach((w) => checkWebsite(w));
-    loadUptimes(websites);
-  };
+  const checkAll = () => { websites.forEach((w) => checkWebsite(w)); loadUptimes(websites); };
 
   const onlineCount = Object.values(statuses).filter((s) => s.status === 'Online').length;
   const offlineCount = Object.values(statuses).filter((s) => s.status === 'Offline').length;
@@ -128,10 +99,8 @@ function WebsiteListContent() {
       if (filterStatus === 'offline') return s?.status === 'Offline' || s?.status === 'Degraded';
       return true;
     })();
-    const matchesSearch = searchQuery === ''
-      ? true
-      : w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        w.url.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = searchQuery === '' ? true
+      : w.name.toLowerCase().includes(searchQuery.toLowerCase()) || w.url.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
@@ -140,54 +109,42 @@ function WebsiteListContent() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between px-2">
-        <h2 className="text-xl font-bold text-white">
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-lg lg:text-xl font-bold text-white">
           Websites
           {searchQuery && (
             <span className="ml-2 text-sm font-normal text-zinc-500">
-              hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"
+              "<span className="text-emerald-400">{searchQuery}</span>"
             </span>
           )}
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button onClick={checkAll} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-all">
             <RefreshCw className="w-4 h-4" />
           </button>
           <span className="text-xs text-zinc-500 font-mono">{onlineCount}/{websites.length} Online</span>
-          <button onClick={() => router.push('/websites')} className="text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest flex items-center gap-1">
-            Lihat Semua <ArrowUpRight className="w-3 h-3" />
+          <button onClick={() => router.push('/websites')}
+            className="text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest flex items-center gap-1">
+            Semua <ArrowUpRight className="w-3 h-3" />
           </button>
         </div>
-      </div>
-
-      <div className="hidden lg:grid grid-cols-12 gap-4 px-6 py-3 text-xs font-bold text-zinc-500 uppercase tracking-wider">
-        <div className="col-span-4">Website</div>
-        <div className="col-span-2">Status</div>
-        <div className="col-span-2">Response</div>
-        <div className="col-span-3">Uptime 30d</div>
-        <div className="col-span-1">SSL</div>
       </div>
 
       <AnimatePresence mode="wait">
         {isAllOfflineEmpty && !searchQuery ? (
           <motion.div key="all-good" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center py-16 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
-            <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
-              <CheckCircle className="w-7 h-7 text-emerald-500" />
-            </div>
-            <p className="text-white font-bold text-lg">All Systems Operational</p>
-            <p className="text-zinc-400 text-sm mt-1">Semua website online dan berjalan normal.</p>
-            <p className="text-zinc-600 text-xs mt-3 font-mono">Last checked: {new Date().toLocaleTimeString('id-ID')}</p>
+            className="flex flex-col items-center justify-center py-12 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
+            <CheckCircle className="w-8 h-8 text-emerald-500 mb-3" />
+            <p className="text-white font-bold">All Systems Operational</p>
+            <p className="text-zinc-400 text-sm mt-1 text-center px-4">Semua website online dan berjalan normal.</p>
           </motion.div>
-
         ) : isStillChecking && !searchQuery ? (
-          <motion.div key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-16">
-            <RefreshCw className="w-8 h-8 text-zinc-600 animate-spin mb-3" />
+          <motion.div key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-12">
+            <RefreshCw className="w-6 h-6 text-zinc-600 animate-spin mb-3" />
             <p className="text-zinc-500 text-sm">Sedang mengecek status website...</p>
           </motion.div>
-
         ) : filteredWebsites.length > 0 ? (
-          <motion.div key={`list-${filterStatus}-${searchQuery}`} className="grid grid-cols-1 gap-4">
+          <motion.div key={`list-${filterStatus}-${searchQuery}`} className="grid grid-cols-1 gap-3">
             {filteredWebsites.map((website, index) => (
               <WebsiteRow
                 key={website.id}
@@ -200,37 +157,25 @@ function WebsiteListContent() {
                 onClick={() => router.push('/websites')}
               />
             ))}
-            {filterStatus === 'online' && offlineCount === 0 && checkedCount > 0 && !searchQuery && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="flex items-center justify-center gap-2 py-3 text-xs text-emerald-500/70 font-mono border border-emerald-500/10 rounded-2xl bg-emerald-500/5">
-                <CheckCircle className="w-3.5 h-3.5" />
-                {onlineCount} website online — tidak ada insiden terdeteksi
-              </motion.div>
-            )}
           </motion.div>
-
         ) : searchQuery ? (
           <motion.div key="empty-search" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
-            <Globe className="w-10 h-10 text-zinc-700 mb-4" />
-            <p className="text-zinc-400 font-medium">Tidak ada hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"</p>
-            <button onClick={() => router.push('/')} className="mt-4 text-xs text-zinc-500 hover:text-white font-bold uppercase tracking-widest">
-              Reset Search
-            </button>
+            className="flex flex-col items-center justify-center py-12 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
+            <Globe className="w-8 h-8 text-zinc-700 mb-3" />
+            <p className="text-zinc-400 text-sm text-center px-4">Tidak ada hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"</p>
+            <button onClick={() => router.push('/')} className="mt-3 text-xs text-zinc-500 hover:text-white font-bold uppercase tracking-widest">Reset</button>
           </motion.div>
-
         ) : filterStatus !== 'all' ? (
           <motion.div key="empty-filter" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
-            <WifiOff className="w-10 h-10 text-zinc-700 mb-4" />
-            <p className="text-zinc-400 font-medium">Tidak ada website dengan status ini</p>
+            className="flex flex-col items-center justify-center py-12 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
+            <WifiOff className="w-8 h-8 text-zinc-700 mb-3" />
+            <p className="text-zinc-400 text-sm">Tidak ada website dengan status ini</p>
           </motion.div>
-
         ) : (
-          <motion.div key="empty" className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
-            <Globe className="w-10 h-10 text-zinc-700 mb-4" />
-            <p className="text-zinc-500 font-medium">Belum ada website</p>
-            <button onClick={() => router.push('/websites')} className="mt-4 text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest">
+          <motion.div key="empty" className="flex flex-col items-center justify-center py-12 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
+            <Globe className="w-8 h-8 text-zinc-700 mb-3" />
+            <p className="text-zinc-500 text-sm">Belum ada website</p>
+            <button onClick={() => router.push('/websites')} className="mt-3 text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest">
               + Tambah Website
             </button>
           </motion.div>
@@ -253,67 +198,76 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   );
 }
 
-// Fix: hapus prop onCheck yang tidak pernah dipakai di JSX
 function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery, onClick }: {
-  website: Website;
-  status?: WebsiteStatus;
-  uptime: number | null;
-  isChecking?: boolean;
-  index: number;
-  searchQuery?: string;
-  onClick: () => void;
+  website: Website; status?: WebsiteStatus; uptime: number | null;
+  isChecking?: boolean; index: number; searchQuery?: string; onClick: () => void;
 }) {
+  const statusColor = s?.status === 'Online' ? 'text-emerald-400' : s?.status === 'Offline' ? 'text-rose-400' : s?.status === 'Degraded' ? 'text-amber-400' : 'text-zinc-400';
+  const statusBg = s?.status === 'Online' ? 'bg-emerald-500' : s?.status === 'Offline' ? 'bg-rose-500' : s?.status === 'Degraded' ? 'bg-amber-500' : 'bg-zinc-500';
+  const iconBg = s?.status === 'Online' ? 'bg-emerald-500/10 text-emerald-500' : s?.status === 'Offline' ? 'bg-rose-500/10 text-rose-500' : 'bg-zinc-800 text-zinc-400';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      whileHover={{ y: -2 }}
       onClick={onClick}
-      className={`group cursor-pointer bg-zinc-900/40 border border-white/5 rounded-2xl p-4 lg:px-6 transition-all duration-300 ${
-        s?.status === 'Online' ? 'hover:border-emerald-500/50 hover:shadow-[0_0_20px_rgba(16,185,129,0.1)]' :
-        s?.status === 'Offline' ? 'hover:border-rose-500/50 hover:shadow-[0_0_20px_rgba(244,63,94,0.1)]' : 'hover:border-white/10'
+      className={`group cursor-pointer bg-zinc-900/40 border border-white/5 rounded-2xl p-4 transition-all duration-300 active:scale-[0.99] ${
+        s?.status === 'Online' ? 'hover:border-emerald-500/30' :
+        s?.status === 'Offline' ? 'hover:border-rose-500/30' : 'hover:border-white/10'
       }`}
     >
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-        <div className="lg:col-span-4 flex items-center gap-4">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s?.status === 'Online' ? 'bg-emerald-500/10 text-emerald-500' : s?.status === 'Offline' ? 'bg-rose-500/10 text-rose-500' : 'bg-zinc-800 text-zinc-400'}`}>
-            <Globe className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors truncate">
-              <HighlightText text={website.name} query={searchQuery ?? ''} />
-            </h4>
-            <p className="text-xs text-zinc-500 font-mono truncate">
-              <HighlightText text={website.url} query={searchQuery ?? ''} />
-            </p>
-          </div>
+      {/* Row utama */}
+      <div className="flex items-center gap-3">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+          <Globe className="w-4 h-4" />
         </div>
-        <div className="lg:col-span-2 flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${s?.status === 'Online' ? 'bg-emerald-500 animate-pulse' : s?.status === 'Offline' ? 'bg-rose-500' : s?.status === 'Degraded' ? 'bg-amber-500' : 'bg-zinc-500'}`} />
-          <span className={`text-xs font-medium ${s?.status === 'Online' ? 'text-emerald-400' : s?.status === 'Offline' ? 'text-rose-400' : s?.status === 'Degraded' ? 'text-amber-400' : 'text-zinc-400'}`}>
-            {isChecking ? 'Checking...' : (s?.status ?? '—')}
+
+        {/* Nama & URL */}
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-bold text-white truncate group-hover:text-emerald-400 transition-colors">
+            <HighlightText text={website.name} query={searchQuery ?? ''} />
+          </h4>
+          <p className="text-xs text-zinc-500 font-mono truncate">
+            <HighlightText text={website.url} query={searchQuery ?? ''} />
+          </p>
+        </div>
+
+        {/* Status badge */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className={`w-1.5 h-1.5 rounded-full ${statusBg} ${s?.status === 'Online' ? 'animate-pulse' : ''}`} />
+          <span className={`text-xs font-bold ${statusColor}`}>
+            {isChecking ? <Activity className="w-3 h-3 animate-pulse" /> : (s?.status ?? '—')}
           </span>
         </div>
-        <div className="lg:col-span-2 flex items-center gap-2 text-zinc-400">
-          <Clock className="w-3.5 h-3.5" />
+      </div>
+
+      {/* Stats row */}
+      <div className="mt-3 flex items-center gap-4">
+        {/* Response time */}
+        <div className="flex items-center gap-1.5 text-zinc-500">
+          <Clock className="w-3 h-3" />
           <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
         </div>
-        <div className="lg:col-span-3">
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${uptime !== null ? getUptimeBg(uptime) : 'bg-zinc-600'}`}
-                style={{ width: `${uptime ?? 0}%` }}
-              />
-            </div>
-            <span className={`text-xs font-mono w-14 text-right ${uptime !== null ? getUptimeColor(uptime) : 'text-zinc-500'}`}>
-              {uptime !== null ? `${uptime}%` : '—'}
-            </span>
+
+        {/* Uptime bar */}
+        <div className="flex-1 flex items-center gap-2">
+          <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${uptime !== null ? getUptimeBg(uptime) : 'bg-zinc-600'}`}
+              style={{ width: `${uptime ?? 0}%` }}
+            />
           </div>
+          <span className={`text-xs font-mono shrink-0 ${uptime !== null ? getUptimeColor(uptime) : 'text-zinc-500'}`}>
+            {uptime !== null ? `${uptime}%` : '—'}
+          </span>
         </div>
-        <div className="lg:col-span-1 flex justify-end">
-          {!s ? <Shield className="w-4 h-4 text-zinc-600" /> : s.isSSL && s.sslValid ? <ShieldCheck className="w-4 h-4 text-emerald-500" /> : <ShieldX className="w-4 h-4 text-rose-500" />}
+
+        {/* SSL */}
+        <div className="shrink-0">
+          {!s ? <Shield className="w-3.5 h-3.5 text-zinc-600" />
+            : s.isSSL && s.sslValid ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            : <ShieldX className="w-3.5 h-3.5 text-rose-500" />}
         </div>
       </div>
     </motion.div>
@@ -323,10 +277,8 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
 export default function WebsiteList() {
   return (
     <Suspense fallback={
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-20 bg-zinc-900/50 border border-white/5 rounded-2xl animate-pulse" />
-        ))}
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-zinc-900/50 border border-white/5 rounded-2xl animate-pulse" />)}
       </div>
     }>
       <WebsiteListContent />

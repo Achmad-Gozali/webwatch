@@ -1,4 +1,4 @@
-// PATH: app/page.tsx — Dashboard (Halaman Utama)
+// PATH: app/page.tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -54,6 +54,7 @@ export default function Dashboard() {
         className={`fixed lg:sticky lg:flex z-50 transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <AnimatePresence>
@@ -68,26 +69,26 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header onMenuClick={() => setSidebarOpen(true)} />
         <Suspense fallback={null}><FilterBar /></Suspense>
 
-        <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-8">
-          {/* Fix: hapus loading state hardcoded 2 detik — render langsung */}
+        <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="space-y-8"
+            className="space-y-6"
           >
-            {/* Charts & AI Insights */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Charts & AI Insights — stack di mobile, 3 kolom di desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
               <ResponseTimeChart />
               <UptimeChart />
-              <AiInsights />
+              <div className="md:col-span-2 lg:col-span-1">
+                <AiInsights />
+              </div>
             </div>
 
-            {/* Website List */}
             <WebsiteList />
           </motion.div>
         </div>
