@@ -1,9 +1,10 @@
 // PATH: app/api/cron/monitor/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sendTelegram, alertOffline, alertDegraded, alertRecovery, alertSlowResponse } from '@/lib/telegram';
 
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('[WebWatch] SUPABASE_SERVICE_ROLE_KEY tidak ditemukan. Tambahkan di .env.local dan Vercel environment variables.');
+  console.error('[WebWatch] SUPABASE_SERVICE_ROLE_KEY tidak ditemukan.');
 }
 
 const supabase = createClient(
@@ -42,13 +43,24 @@ export async function GET(request: Request) {
         responseTime = 0;
       }
 
+      // Simpan ke monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: site.id,
         status,
         response_time: responseTime,
       });
 
-      // Fix: pakai .maybeSingle() — tidak throw error kalau 0 rows
+      // Ambil status sebelumnya
+      const { data: prevLogs } = await supabase
+        .from('monitor_logs')
+        .select('status')
+        .eq('website_id', site.id)
+        .order('checked_at', { ascending: false })
+        .limit(2);
+
+      const prevStatus = prevLogs && prevLogs.length >= 2 ? prevLogs[1].status : null;
+
+      // Incident tracking
       const { data: ongoingIncident } = await supabase
         .from('incidents')
         .select('*')
@@ -63,22 +75,39 @@ export async function GET(request: Request) {
             started_at: new Date().toISOString(),
             status: 'ongoing',
           });
-        }
-      } else if (status === 'online' && ongoingIncident) {
-        const startedAt = new Date(ongoingIncident.started_at);
-        const resolvedAt = new Date();
-        const durationMinutes = Math.round(
-          (resolvedAt.getTime() - startedAt.getTime()) / 60000
-        );
 
-        await supabase
-          .from('incidents')
-          .update({
-            resolved_at: resolvedAt.toISOString(),
-            duration_minutes: durationMinutes,
-            status: 'resolved',
-          })
-          .eq('id', ongoingIncident.id);
+          // Kirim alert hanya kalau status baru berubah
+          if (prevStatus === 'online' || prevStatus === null) {
+            if (status === 'offline') {
+              await sendTelegram(alertOffline(site.name, site.url));
+            } else {
+              await sendTelegram(alertDegraded(site.name, site.url, responseTime));
+            }
+          }
+        }
+      } else if (status === 'online') {
+        // Fix: slow response check di luar blok offline/degraded
+        if (responseTime > 3000 && prevStatus === 'online') {
+          await sendTelegram(alertSlowResponse(site.name, site.url, responseTime));
+        }
+
+        // Recovery
+        if (ongoingIncident) {
+          const startedAt = new Date(ongoingIncident.started_at);
+          const resolvedAt = new Date();
+          const durationMinutes = Math.round((resolvedAt.getTime() - startedAt.getTime()) / 60000);
+
+          await supabase
+            .from('incidents')
+            .update({
+              resolved_at: resolvedAt.toISOString(),
+              duration_minutes: durationMinutes,
+              status: 'resolved',
+            })
+            .eq('id', ongoingIncident.id);
+
+          await sendTelegram(alertRecovery(site.name, site.url, durationMinutes));
+        }
       }
 
       return { name: site.name, url: site.url, status, responseTime };
