@@ -23,12 +23,12 @@ interface WebsiteStatus {
 
 const STORAGE_KEY = 'cloudwatch_websites';
 
-// Fix: Pisahkan ke inner component karena useSearchParams butuh Suspense boundary
 function WebsiteListContent() {
   const router = useRouter();
-  // Fix: gunakan useSearchParams dari Next.js — reactive, tidak perlu polling
   const searchParams = useSearchParams();
   const filterStatus = searchParams.get('status') ?? 'all';
+  // Fix: baca search query dari URL param yang di-set Header.tsx
+  const searchQuery = searchParams.get('q') ?? '';
 
   const [websites, setWebsites] = useState<Website[]>([]);
   const [statuses, setStatuses] = useState<Record<string, WebsiteStatus>>({});
@@ -66,12 +66,23 @@ function WebsiteListContent() {
   const checkedCount = Object.keys(statuses).length;
   const degradedCount = Object.values(statuses).filter((s) => s.status === 'Degraded').length;
 
+  // Fix: terapkan KEDUA filter — status dan search query
   const filteredWebsites = websites.filter((w) => {
-    if (filterStatus === 'all') return true;
     const s = statuses[w.id];
-    if (filterStatus === 'online') return s?.status === 'Online';
-    if (filterStatus === 'offline') return s?.status === 'Offline' || s?.status === 'Degraded';
-    return true;
+
+    const matchesStatus = (() => {
+      if (filterStatus === 'all') return true;
+      if (filterStatus === 'online') return s?.status === 'Online';
+      if (filterStatus === 'offline') return s?.status === 'Offline' || s?.status === 'Degraded';
+      return true;
+    })();
+
+    const matchesSearch = searchQuery === ''
+      ? true
+      : w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        w.url.toLowerCase().includes(searchQuery.toLowerCase());
+
+    return matchesStatus && matchesSearch;
   });
 
   const isAllOfflineEmpty = filterStatus === 'offline' && (offlineCount + degradedCount) === 0 && checkedCount > 0;
@@ -79,9 +90,15 @@ function WebsiteListContent() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between px-2">
-        <h2 className="text-xl font-bold text-white">Websites</h2>
+        <h2 className="text-xl font-bold text-white">
+          Websites
+          {searchQuery && (
+            <span className="ml-2 text-sm font-normal text-zinc-500">
+              hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"
+            </span>
+          )}
+        </h2>
         <div className="flex items-center gap-4">
           <button onClick={checkAll} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-all">
             <RefreshCw className="w-4 h-4" />
@@ -93,7 +110,6 @@ function WebsiteListContent() {
         </div>
       </div>
 
-      {/* Table Header */}
       <div className="hidden lg:grid grid-cols-12 gap-4 px-6 py-3 text-xs font-bold text-zinc-500 uppercase tracking-wider">
         <div className="col-span-4">Website</div>
         <div className="col-span-2">Status</div>
@@ -103,7 +119,7 @@ function WebsiteListContent() {
       </div>
 
       <AnimatePresence mode="wait">
-        {isAllOfflineEmpty ? (
+        {isAllOfflineEmpty && !searchQuery ? (
           <motion.div key="all-good" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="flex flex-col items-center justify-center py-16 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
             <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
@@ -114,14 +130,14 @@ function WebsiteListContent() {
             <p className="text-zinc-600 text-xs mt-3 font-mono">Last checked: {new Date().toLocaleTimeString('id-ID')}</p>
           </motion.div>
 
-        ) : isStillChecking ? (
+        ) : isStillChecking && !searchQuery ? (
           <motion.div key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-16">
             <RefreshCw className="w-8 h-8 text-zinc-600 animate-spin mb-3" />
             <p className="text-zinc-500 text-sm">Sedang mengecek status website...</p>
           </motion.div>
 
         ) : filteredWebsites.length > 0 ? (
-          <motion.div key={`list-${filterStatus}`} className="grid grid-cols-1 gap-4">
+          <motion.div key={`list-${filterStatus}-${searchQuery}`} className="grid grid-cols-1 gap-4">
             {filteredWebsites.map((website, index) => (
               <WebsiteRow
                 key={website.id}
@@ -129,17 +145,28 @@ function WebsiteListContent() {
                 status={statuses[website.id]}
                 isChecking={checking[website.id]}
                 index={index}
+                searchQuery={searchQuery}
                 onCheck={() => checkWebsite(website)}
                 onClick={() => router.push('/websites')}
               />
             ))}
-            {filterStatus === 'online' && offlineCount === 0 && checkedCount > 0 && (
+            {filterStatus === 'online' && offlineCount === 0 && checkedCount > 0 && !searchQuery && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="flex items-center justify-center gap-2 py-3 text-xs text-emerald-500/70 font-mono border border-emerald-500/10 rounded-2xl bg-emerald-500/5">
                 <CheckCircle className="w-3.5 h-3.5" />
                 {onlineCount} website online — tidak ada insiden terdeteksi
               </motion.div>
             )}
+          </motion.div>
+
+        ) : searchQuery ? (
+          <motion.div key="empty-search" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
+            <Globe className="w-10 h-10 text-zinc-700 mb-4" />
+            <p className="text-zinc-400 font-medium">Tidak ada hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"</p>
+            <button onClick={() => router.push('/')} className="mt-4 text-xs text-zinc-500 hover:text-white font-bold uppercase tracking-widest">
+              Reset Search
+            </button>
           </motion.div>
 
         ) : filterStatus !== 'all' ? (
@@ -163,9 +190,22 @@ function WebsiteListContent() {
   );
 }
 
-function WebsiteRow({ website, status: s, isChecking, index, onClick }: {
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-emerald-500/30 text-emerald-300 rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+function WebsiteRow({ website, status: s, isChecking, index, searchQuery, onClick }: {
   website: Website; status?: WebsiteStatus; isChecking?: boolean; index: number;
-  onCheck: () => void; onClick: () => void;
+  searchQuery?: string; onCheck: () => void; onClick: () => void;
 }) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ y: -2 }}
@@ -179,8 +219,12 @@ function WebsiteRow({ website, status: s, isChecking, index, onClick }: {
             <Globe className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h4 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors truncate">{website.name}</h4>
-            <p className="text-xs text-zinc-500 font-mono truncate">{website.url}</p>
+            <h4 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors truncate">
+              <HighlightText text={website.name} query={searchQuery ?? ''} />
+            </h4>
+            <p className="text-xs text-zinc-500 font-mono truncate">
+              <HighlightText text={website.url} query={searchQuery ?? ''} />
+            </p>
           </div>
         </div>
         <div className="lg:col-span-2 flex items-center gap-2">
@@ -209,7 +253,6 @@ function WebsiteRow({ website, status: s, isChecking, index, onClick }: {
   );
 }
 
-// Fix: Wrap dengan Suspense karena useSearchParams butuh Suspense boundary
 export default function WebsiteList() {
   return (
     <Suspense fallback={
