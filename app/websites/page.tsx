@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '@/lib/supabase';
 import {
   Globe, Plus, Trash2, RefreshCw, Shield, ShieldCheck, ShieldX,
   Clock, Activity, X, CheckCircle, XCircle, AlertCircle,
@@ -14,11 +15,7 @@ interface Website {
   id: string;
   name: string;
   url: string;
-  status?: string;
-  responseTime?: number;
-  uptime?: number;
-  isSSL?: boolean;
-  sslValid?: boolean;
+  created_at?: string;
 }
 
 interface WebsiteStatus {
@@ -35,10 +32,6 @@ interface WebsiteStatus {
 
 const STORAGE_KEY = 'cloudwatch_websites';
 
-const defaultWebsites: Website[] = [
-  { id: '1', name: 'My Website', url: 'https://example.com' },
-];
-
 export default function WebsitesPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [websites, setWebsites] = useState<Website[]>([]);
@@ -47,24 +40,44 @@ export default function WebsitesPage() {
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [checking, setChecking] = useState<Record<string, boolean>>({});
+  const [loadingWebsites, setLoadingWebsites] = useState(true);
 
+  // Load websites dari Supabase, fallback ke localStorage
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    setWebsites(saved ? JSON.parse(saved) : defaultWebsites);
+    const loadWebsites = async () => {
+      setLoadingWebsites(true);
+      const { data, error } = await supabase.from('websites').select('*').order('created_at', { ascending: true });
+      if (!error && data && data.length > 0) {
+        setWebsites(data);
+      } else {
+        // Fallback: load dari localStorage
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const localSites = JSON.parse(saved);
+          setWebsites(localSites);
+          // Migrate localStorage → Supabase
+          for (const site of localSites) {
+            await supabase.from('websites').upsert({ name: site.name, url: site.url }, { onConflict: 'url' });
+          }
+        }
+      }
+      setLoadingWebsites(false);
+    };
+    loadWebsites();
   }, []);
 
-  // Simpan websites + status ke localStorage setiap kali statuses berubah
+  // Sync ke localStorage juga biar dashboard tetap bisa baca
   useEffect(() => {
     if (websites.length === 0) return;
     const merged = websites.map((w) => {
       const s = statuses[w.id];
       return {
         ...w,
-        status: s?.status?.toLowerCase() ?? w.status,
-        responseTime: s?.responseTime ?? w.responseTime,
-        uptime: s?.uptime ?? w.uptime,
-        isSSL: s?.isSSL ?? w.isSSL,
-        sslValid: s?.sslValid ?? w.sslValid,
+        status: s?.status?.toLowerCase() ?? undefined,
+        responseTime: s?.responseTime ?? undefined,
+        uptime: s?.uptime ?? undefined,
+        isSSL: s?.isSSL ?? undefined,
+        sslValid: s?.sslValid ?? undefined,
       };
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -91,13 +104,18 @@ export default function WebsitesPage() {
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
-      setStatuses((prev) => ({
-        ...prev,
-        [website.id]: {
-          ...data,
-          uptime: prev[website.id]?.uptime ?? (data.status === 'Online' ? 99.9 : 85.0),
-        },
-      }));
+      const result = {
+        ...data,
+        uptime: statuses[website.id]?.uptime ?? (data.status === 'Online' ? 99.9 : 85.0),
+      };
+      setStatuses((prev) => ({ ...prev, [website.id]: result }));
+
+      // Simpan hasil ke Supabase monitor_logs
+      await supabase.from('monitor_logs').insert({
+        website_id: website.id,
+        status: data.status.toLowerCase(),
+        response_time: data.responseTime,
+      });
     } catch {
       setStatuses((prev) => ({
         ...prev,
@@ -116,7 +134,7 @@ export default function WebsitesPage() {
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
-  }, []);
+  }, [statuses]);
 
   useEffect(() => {
     if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
@@ -124,19 +142,33 @@ export default function WebsitesPage() {
 
   const checkAll = () => websites.forEach((w) => checkWebsite(w));
 
-  const addWebsite = () => {
+  const addWebsite = async () => {
     if (!newName.trim() || !newUrl.trim()) return;
     let url = newUrl.trim();
     if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
-    const newSite: Website = { id: Date.now().toString(), name: newName.trim(), url };
-    setWebsites((prev) => [...prev, newSite]);
+
+    // Simpan ke Supabase
+    const { data, error } = await supabase
+      .from('websites')
+      .insert({ name: newName.trim(), url })
+      .select()
+      .single();
+
+    if (error) {
+      alert('Gagal menambahkan website: ' + error.message);
+      return;
+    }
+
+    setWebsites((prev) => [...prev, data]);
     setNewName('');
     setNewUrl('');
     setIsAddOpen(false);
-    setTimeout(() => checkWebsite(newSite), 100);
+    setTimeout(() => checkWebsite(data), 100);
   };
 
-  const removeWebsite = (id: string) => {
+  const removeWebsite = async (id: string) => {
+    // Hapus dari Supabase
+    await supabase.from('websites').delete().eq('id', id);
     setWebsites((prev) => prev.filter((w) => w.id !== id));
     setStatuses((prev) => { const next = { ...prev }; delete next[id]; return next; });
   };
@@ -211,7 +243,11 @@ export default function WebsitesPage() {
           </div>
 
           <div className="space-y-4">
-            {websites.map((website, index) => {
+            {loadingWebsites ? (
+              [1, 2, 3].map((i) => (
+                <div key={i} className="h-24 bg-zinc-900/50 border border-white/5 rounded-2xl animate-pulse" />
+              ))
+            ) : websites.map((website, index) => {
               const s = statuses[website.id];
               const isChecking = checking[website.id];
               return (
@@ -273,7 +309,7 @@ export default function WebsitesPage() {
                 </motion.div>
               );
             })}
-            {websites.length === 0 && (
+            {!loadingWebsites && websites.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                 <Globe className="w-10 h-10 text-zinc-700 mb-4" />
                 <p className="text-zinc-500 font-medium">Belum ada website yang dimonitor</p>
