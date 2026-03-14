@@ -1,4 +1,4 @@
-// PATH: app/websites/page.tsx — Halaman Website Monitoring
+// PATH: app/websites/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
+import { getUptimeColor, getUptimeBg, getUptimeLabel } from '@/lib/uptime';
 import {
   Globe, Plus, Trash2, RefreshCw, Shield, ShieldCheck, ShieldX,
   Clock, Activity, X, CheckCircle, XCircle, AlertCircle,
@@ -27,6 +28,7 @@ interface WebsiteStatus {
   sslValid: boolean;
   sslExpiry: string | null;
   checkedAt: string;
+  // Fix: uptime sekarang dihitung dari monitor_logs, bukan hardcoded
   uptime: number;
 }
 
@@ -36,23 +38,43 @@ export default function WebsitesPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [websites, setWebsites] = useState<Website[]>([]);
   const [statuses, setStatuses] = useState<Record<string, WebsiteStatus>>({});
+  const [uptimes, setUptimes] = useState<Record<string, number>>({});
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [checking, setChecking] = useState<Record<string, boolean>>({});
   const [loadingWebsites, setLoadingWebsites] = useState(true);
 
+  // Fix: load uptime akurat dari monitor_logs via API
+  const loadUptimes = useCallback(async (sites: Website[]) => {
+    if (sites.length === 0) return;
+    const ids = sites.map((w) => w.id).join(',');
+    try {
+      const res = await fetch(`/api/uptime?websiteIds=${ids}&days=30`);
+      const data = await res.json();
+      if (data.uptimes) setUptimes(data.uptimes);
+    } catch {
+      console.error('Gagal load uptime');
+    }
+  }, []);
+
   useEffect(() => {
     const loadWebsites = async () => {
       setLoadingWebsites(true);
-      const { data, error } = await supabase.from('websites').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase
+        .from('websites')
+        .select('*')
+        .order('created_at', { ascending: true });
+
       if (!error && data && data.length > 0) {
         setWebsites(data);
+        loadUptimes(data);
       } else {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const localSites = JSON.parse(saved);
           setWebsites(localSites);
+          loadUptimes(localSites);
           for (const site of localSites) {
             await supabase.from('websites').upsert({ name: site.name, url: site.url }, { onConflict: 'url' });
           }
@@ -61,23 +83,21 @@ export default function WebsitesPage() {
       setLoadingWebsites(false);
     };
     loadWebsites();
-  }, []);
+  }, [loadUptimes]);
 
   useEffect(() => {
     if (websites.length === 0) return;
-    const merged = websites.map((w) => {
-      const s = statuses[w.id];
-      return {
-        ...w,
-        status: s?.status?.toLowerCase() ?? undefined,
-        responseTime: s?.responseTime ?? undefined,
-        uptime: s?.uptime ?? undefined,
-        isSSL: s?.isSSL ?? undefined,
-        sslValid: s?.sslValid ?? undefined,
-      };
-    });
+    const merged = websites.map((w) => ({
+      ...w,
+      status: statuses[w.id]?.status?.toLowerCase() ?? undefined,
+      responseTime: statuses[w.id]?.responseTime ?? undefined,
+      // Fix: simpan uptime akurat ke localStorage
+      uptime: uptimes[w.id] ?? statuses[w.id]?.uptime ?? undefined,
+      isSSL: statuses[w.id]?.isSSL ?? undefined,
+      sslValid: statuses[w.id]?.sslValid ?? undefined,
+    }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-  }, [statuses, websites]);
+  }, [statuses, uptimes, websites]);
 
   const checkWebsite = useCallback(async (website: Website) => {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
@@ -93,24 +113,35 @@ export default function WebsitesPage() {
         sslValid: false,
         sslExpiry: null,
         checkedAt: new Date().toISOString(),
-        uptime: prev[website.id]?.uptime ?? 99.9,
+        uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 100,
       },
     }));
 
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
-      const result = {
-        ...data,
-        uptime: statuses[website.id]?.uptime ?? (data.status === 'Online' ? 99.9 : 85.0),
-      };
-      setStatuses((prev) => ({ ...prev, [website.id]: result }));
 
+      // Simpan ke monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: website.id,
         status: data.status.toLowerCase(),
         response_time: data.responseTime,
       });
+
+      setStatuses((prev) => ({
+        ...prev,
+        [website.id]: {
+          ...data,
+          uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 100,
+        },
+      }));
+
+      // Refresh uptime setelah insert log baru
+      const freshRes = await fetch(`/api/uptime?websiteIds=${website.id}&days=30`);
+      const freshData = await freshRes.json();
+      if (freshData.uptimes) {
+        setUptimes((prev) => ({ ...prev, ...freshData.uptimes }));
+      }
     } catch {
       setStatuses((prev) => ({
         ...prev,
@@ -123,19 +154,23 @@ export default function WebsitesPage() {
           sslValid: false,
           sslExpiry: null,
           checkedAt: new Date().toISOString(),
-          uptime: prev[website.id]?.uptime ?? 0,
+          uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 0,
         },
       }));
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
-  }, [statuses]);
+  }, [uptimes]);
 
   useEffect(() => {
     if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
   }, [websites.length]); // eslint-disable-line
 
-  const checkAll = () => websites.forEach((w) => checkWebsite(w));
+  const checkAll = () => {
+    websites.forEach((w) => checkWebsite(w));
+    // Refresh semua uptime sekaligus
+    loadUptimes(websites);
+  };
 
   const addWebsite = async () => {
     if (!newName.trim() || !newUrl.trim()) return;
@@ -164,6 +199,7 @@ export default function WebsitesPage() {
     await supabase.from('websites').delete().eq('id', id);
     setWebsites((prev) => prev.filter((w) => w.id !== id));
     setStatuses((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    setUptimes((prev) => { const next = { ...prev }; delete next[id]; return next; });
   };
 
   const getStatusColor = (status?: string) => {
@@ -189,10 +225,14 @@ export default function WebsitesPage() {
 
   const onlineCount = Object.values(statuses).filter((s) => s.status === 'Online').length;
   const offlineCount = Object.values(statuses).filter((s) => s.status === 'Offline').length;
-  const avgResponseTime =
-    Object.values(statuses).length > 0
-      ? Math.round(Object.values(statuses).reduce((acc, s) => acc + (s.responseTime || 0), 0) / Object.values(statuses).length)
-      : 0;
+  const avgResponseTime = Object.values(statuses).length > 0
+    ? Math.round(Object.values(statuses).reduce((acc, s) => acc + (s.responseTime || 0), 0) / Object.values(statuses).length)
+    : 0;
+
+  // Rata-rata uptime dari semua website
+  const avgUptime = Object.values(uptimes).length > 0
+    ? parseFloat((Object.values(uptimes).reduce((a, b) => a + b, 0) / Object.values(uptimes).length).toFixed(1))
+    : null;
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white">
@@ -212,20 +252,26 @@ export default function WebsitesPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={checkAll} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold rounded-xl transition-all">
-                <RefreshCw className="w-4 h-4" />Refresh All
+                <RefreshCw className="w-4 h-4" /> Refresh All
               </button>
               <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20">
-                <Plus className="w-4 h-4" />Add Website
+                <Plus className="w-4 h-4" /> Add Website
               </button>
             </div>
           </div>
 
+          {/* Stats — Fix: Avg Uptime sekarang akurat */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Total', value: websites.length, color: 'text-white', sub: 'websites' },
               { label: 'Online', value: onlineCount, color: 'text-emerald-400', sub: 'aktif sekarang' },
               { label: 'Offline', value: offlineCount, color: 'text-rose-400', sub: 'tidak tersedia' },
-              { label: 'Avg Response', value: `${avgResponseTime}ms`, color: 'text-blue-400', sub: 'rata-rata' },
+              {
+                label: 'Avg Uptime',
+                value: avgUptime !== null ? `${avgUptime}%` : `${avgResponseTime}ms`,
+                color: avgUptime !== null ? getUptimeColor(avgUptime) : 'text-blue-400',
+                sub: avgUptime !== null ? 'rata-rata 30 hari' : 'avg response',
+              },
             ].map((card) => (
               <div key={card.label} className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5">
                 <p className="text-xs text-zinc-500 uppercase font-bold mb-1">{card.label}</p>
@@ -243,6 +289,9 @@ export default function WebsitesPage() {
             ) : websites.map((website, index) => {
               const s = statuses[website.id];
               const isChecking = checking[website.id];
+              // Fix: ambil uptime dari state uptimes, bukan dari statuses
+              const uptime = uptimes[website.id] ?? null;
+
               return (
                 <motion.div key={website.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}
                   className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 lg:p-6 hover:border-white/10 transition-all">
@@ -253,11 +302,14 @@ export default function WebsitesPage() {
                       </div>
                       <div className="min-w-0">
                         <h4 className="text-sm font-bold text-white truncate">{website.name}</h4>
-                        <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-500 font-mono hover:text-emerald-400 transition-colors truncate block" onClick={(e) => e.stopPropagation()}>
+                        <a href={website.url} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-zinc-500 font-mono hover:text-emerald-400 transition-colors truncate block"
+                          onClick={(e) => e.stopPropagation()}>
                           {website.url}
                         </a>
                       </div>
                     </div>
+
                     <div className="lg:col-span-2 flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${getStatusBg(s?.status)} ${s?.status === 'Online' ? 'animate-pulse' : ''}`} />
                       <span className={`text-xs font-bold flex items-center gap-1.5 ${getStatusColor(s?.status)}`}>
@@ -265,21 +317,37 @@ export default function WebsitesPage() {
                         {isChecking ? 'Checking...' : (s?.status ?? '—')}
                       </span>
                     </div>
+
                     <div className="lg:col-span-2">
                       <div className="flex items-center gap-2 text-zinc-400">
                         <Clock className="w-3.5 h-3.5" />
                         <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
                       </div>
                     </div>
+
+                    {/* Fix: Uptime dari monitor_logs dengan label akurat */}
                     <div className="lg:col-span-2">
-                      <p className="text-[10px] text-zinc-500 uppercase font-bold mb-1">Uptime</p>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] text-zinc-500 uppercase font-bold">Uptime 30d</p>
+                        {uptime !== null && (
+                          <span className={`text-[10px] font-bold ${getUptimeColor(uptime)}`}>
+                            {getUptimeLabel(uptime)}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${s?.uptime ?? 0}%` }} />
+                          <div
+                            className={`h-full rounded-full transition-all duration-700 ${uptime !== null ? getUptimeBg(uptime) : 'bg-zinc-600'}`}
+                            style={{ width: `${uptime ?? 0}%` }}
+                          />
                         </div>
-                        <span className="text-xs font-mono text-white">{s ? `${s.uptime.toFixed(1)}%` : '—'}</span>
+                        <span className="text-xs font-mono text-white w-14 text-right">
+                          {uptime !== null ? `${uptime}%` : '—'}
+                        </span>
                       </div>
                     </div>
+
                     <div className="lg:col-span-2">
                       <div className="flex items-center gap-2">
                         {!s ? <Shield className="w-4 h-4 text-zinc-600" /> : s.isSSL && s.sslValid ? <ShieldCheck className="w-4 h-4 text-emerald-500" /> : <ShieldX className="w-4 h-4 text-rose-500" />}
@@ -289,24 +357,34 @@ export default function WebsitesPage() {
                         </div>
                       </div>
                     </div>
+
                     <div className="lg:col-span-1 flex items-center justify-end gap-2">
-                      <button onClick={() => checkWebsite(website)} disabled={isChecking} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-colors disabled:opacity-50">
+                      <button onClick={() => checkWebsite(website)} disabled={isChecking}
+                        className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-colors disabled:opacity-50">
                         <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
                       </button>
-                      <button onClick={() => removeWebsite(website.id)} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-rose-500 transition-colors">
+                      <button onClick={() => removeWebsite(website.id)}
+                        className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-rose-500 transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
-                  {s?.checkedAt && <p className="text-[10px] text-zinc-600 mt-3 font-mono">Last checked: {new Date(s.checkedAt).toLocaleString('id-ID')}</p>}
+                  {s?.checkedAt && (
+                    <p className="text-[10px] text-zinc-600 mt-3 font-mono">
+                      Last checked: {new Date(s.checkedAt).toLocaleString('id-ID')}
+                    </p>
+                  )}
                 </motion.div>
               );
             })}
+
             {!loadingWebsites && websites.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                 <Globe className="w-10 h-10 text-zinc-700 mb-4" />
                 <p className="text-zinc-500 font-medium">Belum ada website yang dimonitor</p>
-                <button onClick={() => setIsAddOpen(true)} className="mt-4 text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest">+ Tambah Website</button>
+                <button onClick={() => setIsAddOpen(true)} className="mt-4 text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest">
+                  + Tambah Website
+                </button>
               </div>
             )}
           </div>
@@ -316,12 +394,15 @@ export default function WebsitesPage() {
       <AnimatePresence>
         {isAddOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAddOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsAddOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-md bg-zinc-900 border border-white/10 rounded-3xl shadow-2xl z-[60] p-8">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-white">Tambah Website</h3>
-                <button onClick={() => setIsAddOpen(false)} className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+                <button onClick={() => setIsAddOpen(false)} className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -331,7 +412,8 @@ export default function WebsitesPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">URL Website</label>
-                  <input type="text" placeholder="Contoh: https://mywebsite.com" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWebsite()}
+                  <input type="text" placeholder="Contoh: https://mywebsite.com" value={newUrl} onChange={(e) => setNewUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addWebsite()}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500/50 transition-all" />
                 </div>
                 <button onClick={addWebsite} disabled={!newName.trim() || !newUrl.trim()}
