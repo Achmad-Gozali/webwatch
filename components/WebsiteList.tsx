@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield, ArrowUpRight, CheckCircle, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getUptimeColor, getUptimeBg } from '@/lib/uptime';
 
 interface Website {
   id: string;
@@ -17,7 +18,6 @@ interface WebsiteStatus {
   responseTime: number;
   isSSL: boolean;
   sslValid: boolean;
-  uptime: number;
   checkedAt: string;
 }
 
@@ -27,11 +27,11 @@ function WebsiteListContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filterStatus = searchParams.get('status') ?? 'all';
-  // Fix: baca search query dari URL param yang di-set Header.tsx
   const searchQuery = searchParams.get('q') ?? '';
 
   const [websites, setWebsites] = useState<Website[]>([]);
   const [statuses, setStatuses] = useState<Record<string, WebsiteStatus>>({});
+  const [uptimes, setUptimes] = useState<Record<string, number>>({});
   const [checking, setChecking] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -39,18 +39,40 @@ function WebsiteListContent() {
     if (saved) setWebsites(JSON.parse(saved));
   }, []);
 
+  // Fix: load uptime akurat dari monitor_logs
+  const loadUptimes = useCallback(async (sites: Website[]) => {
+    if (sites.length === 0) return;
+    const ids = sites.map((w) => w.id).join(',');
+    try {
+      const res = await fetch(`/api/uptime?websiteIds=${ids}&days=30`);
+      const data = await res.json();
+      if (data.uptimes) setUptimes(data.uptimes);
+    } catch {
+      console.error('Gagal load uptime');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (websites.length > 0) loadUptimes(websites);
+  }, [websites, loadUptimes]);
+
   const checkWebsite = useCallback(async (website: Website) => {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
     setStatuses((prev) => ({
       ...prev,
-      [website.id]: { ...prev[website.id], status: 'Checking...', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, uptime: prev[website.id]?.uptime ?? 99.9, checkedAt: new Date().toISOString() },
+      [website.id]: { ...prev[website.id], status: 'Checking...', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() },
     }));
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
-      setStatuses((prev) => ({ ...prev, [website.id]: { ...data, uptime: prev[website.id]?.uptime ?? (data.status === 'Online' ? 99.9 : 85.0) } }));
+      setStatuses((prev) => ({ ...prev, [website.id]: data }));
+
+      // Refresh uptime setelah cek
+      const uptimeRes = await fetch(`/api/uptime?websiteIds=${website.id}&days=30`);
+      const uptimeData = await uptimeRes.json();
+      if (uptimeData.uptimes) setUptimes((prev) => ({ ...prev, ...uptimeData.uptimes }));
     } catch {
-      setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, uptime: prev[website.id]?.uptime ?? 0, checkedAt: new Date().toISOString() } }));
+      setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, checkedAt: new Date().toISOString() } }));
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
@@ -60,28 +82,28 @@ function WebsiteListContent() {
     if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
   }, [websites.length]); // eslint-disable-line
 
-  const checkAll = () => websites.forEach((w) => checkWebsite(w));
+  const checkAll = () => {
+    websites.forEach((w) => checkWebsite(w));
+    loadUptimes(websites);
+  };
+
   const onlineCount = Object.values(statuses).filter((s) => s.status === 'Online').length;
   const offlineCount = Object.values(statuses).filter((s) => s.status === 'Offline').length;
   const checkedCount = Object.keys(statuses).length;
   const degradedCount = Object.values(statuses).filter((s) => s.status === 'Degraded').length;
 
-  // Fix: terapkan KEDUA filter — status dan search query
   const filteredWebsites = websites.filter((w) => {
     const s = statuses[w.id];
-
     const matchesStatus = (() => {
       if (filterStatus === 'all') return true;
       if (filterStatus === 'online') return s?.status === 'Online';
       if (filterStatus === 'offline') return s?.status === 'Offline' || s?.status === 'Degraded';
       return true;
     })();
-
     const matchesSearch = searchQuery === ''
       ? true
       : w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         w.url.toLowerCase().includes(searchQuery.toLowerCase());
-
     return matchesStatus && matchesSearch;
   });
 
@@ -114,7 +136,7 @@ function WebsiteListContent() {
         <div className="col-span-4">Website</div>
         <div className="col-span-2">Status</div>
         <div className="col-span-2">Response</div>
-        <div className="col-span-3">Uptime</div>
+        <div className="col-span-3">Uptime 30d</div>
         <div className="col-span-1">SSL</div>
       </div>
 
@@ -143,6 +165,7 @@ function WebsiteListContent() {
                 key={website.id}
                 website={website}
                 status={statuses[website.id]}
+                uptime={uptimes[website.id] ?? null}
                 isChecking={checking[website.id]}
                 index={index}
                 searchQuery={searchQuery}
@@ -203,8 +226,8 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   );
 }
 
-function WebsiteRow({ website, status: s, isChecking, index, searchQuery, onClick }: {
-  website: Website; status?: WebsiteStatus; isChecking?: boolean; index: number;
+function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery, onClick }: {
+  website: Website; status?: WebsiteStatus; uptime: number | null; isChecking?: boolean; index: number;
   searchQuery?: string; onCheck: () => void; onClick: () => void;
 }) {
   return (
@@ -237,12 +260,18 @@ function WebsiteRow({ website, status: s, isChecking, index, searchQuery, onClic
           <Clock className="w-3.5 h-3.5" />
           <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
         </div>
+        {/* Fix: uptime akurat dari monitor_logs */}
         <div className="lg:col-span-3">
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${s?.uptime ?? 0}%` }} />
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${uptime !== null ? getUptimeBg(uptime) : 'bg-zinc-600'}`}
+                style={{ width: `${uptime ?? 0}%` }}
+              />
             </div>
-            <span className="text-xs font-mono text-white w-12 text-right">{s ? `${s.uptime.toFixed(1)}%` : '—'}</span>
+            <span className={`text-xs font-mono w-14 text-right ${uptime !== null ? getUptimeColor(uptime) : 'text-zinc-500'}`}>
+              {uptime !== null ? `${uptime}%` : '—'}
+            </span>
           </div>
         </div>
         <div className="lg:col-span-1 flex justify-end">
