@@ -8,13 +8,11 @@ const supabase = createClient(
 );
 
 export async function GET(request: Request) {
-  // Security: cek CRON_SECRET biar gak bisa dipanggil sembarangan
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Ambil semua website dari Supabase
   const { data: websites, error } = await supabase.from('websites').select('*');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!websites || websites.length === 0) {
@@ -30,10 +28,9 @@ export async function GET(request: Request) {
       try {
         const res = await fetch(site.url, {
           method: 'GET',
-          signal: AbortSignal.timeout(10000), // 10s timeout
+          signal: AbortSignal.timeout(10000),
         });
         responseTime = Date.now() - start;
-
         if (res.ok) status = responseTime > 2000 ? 'degraded' : 'online';
         else status = 'degraded';
       } catch {
@@ -41,12 +38,45 @@ export async function GET(request: Request) {
         responseTime = 0;
       }
 
-      // Simpan hasil ke monitor_logs
+      // Simpan ke monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: site.id,
         status,
         response_time: responseTime,
       });
+
+      // Incident tracking
+      const { data: ongoingIncident } = await supabase
+        .from('incidents')
+        .select('*')
+        .eq('website_id', site.id)
+        .eq('status', 'ongoing')
+        .single();
+
+      if (status === 'offline' || status === 'degraded') {
+        // Buat incident baru kalau belum ada
+        if (!ongoingIncident) {
+          await supabase.from('incidents').insert({
+            website_id: site.id,
+            started_at: new Date().toISOString(),
+            status: 'ongoing',
+          });
+        }
+      } else if (status === 'online' && ongoingIncident) {
+        // Resolve incident kalau website balik online
+        const startedAt = new Date(ongoingIncident.started_at);
+        const resolvedAt = new Date();
+        const durationMinutes = Math.round((resolvedAt.getTime() - startedAt.getTime()) / 60000);
+
+        await supabase
+          .from('incidents')
+          .update({
+            resolved_at: resolvedAt.toISOString(),
+            duration_minutes: durationMinutes,
+            status: 'resolved',
+          })
+          .eq('id', ongoingIncident.id);
+      }
 
       return { name: site.name, url: site.url, status, responseTime };
     })
