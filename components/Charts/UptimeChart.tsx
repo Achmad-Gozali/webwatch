@@ -4,23 +4,58 @@
 import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { ShieldCheck } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Website {
   id: string;
   name: string;
   url: string;
   status?: string;
-  uptime?: number;
 }
 
 export default function UptimeChart() {
   const [sites, setSites] = useState<Website[]>([]);
 
+  const loadSites = async () => {
+    const { data: websites, error } = await supabase
+      .from('websites')
+      .select('id, name, url');
+
+    if (error || !websites || websites.length === 0) {
+      const raw = localStorage.getItem('cloudwatch_websites');
+      if (raw) setSites(JSON.parse(raw));
+      return;
+    }
+
+    const withStatus = await Promise.all(
+      websites.map(async (site) => {
+        const { data: log } = await supabase
+          .from('monitor_logs')
+          .select('status')
+          .eq('website_id', site.id)
+          .order('checked_at', { ascending: false })
+          .limit(1)
+          .single();
+        return { ...site, status: log?.status ?? undefined };
+      })
+    );
+
+    setSites(withStatus);
+    localStorage.setItem('cloudwatch_websites', JSON.stringify(withStatus));
+  };
+
   useEffect(() => {
-    const raw = localStorage.getItem('cloudwatch_websites');
-    if (!raw) return;
-    setSites(JSON.parse(raw));
-  }, []);
+    loadSites();
+
+    const channel = supabase
+      .channel('uptime-monitor-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadSites();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []); // eslint-disable-line
 
   const online = sites.filter((s) => s.status === 'online').length;
   const degraded = sites.filter((s) => s.status === 'degraded').length;
@@ -60,26 +95,13 @@ export default function UptimeChart() {
         <div className="flex items-center gap-4">
           <ResponsiveContainer width={120} height={120}>
             <PieChart>
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={35}
-                outerRadius={55}
-                paddingAngle={3}
-                dataKey="value"
-                strokeWidth={0}
-              >
-                {pieData.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} />
-                ))}
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55}
+                paddingAngle={3} dataKey="value" strokeWidth={0}>
+                {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
               </Pie>
-              <Tooltip
-                contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
-              />
+              <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }} />
             </PieChart>
           </ResponsiveContainer>
-
           <div className="flex-1 space-y-2">
             {[
               { label: 'Online', value: online, color: 'bg-emerald-500' },
@@ -105,9 +127,7 @@ export default function UptimeChart() {
         </div>
       ) : (
         <div className="h-[120px] flex items-center justify-center">
-          <p className="text-xs text-zinc-600 text-center">
-            Belum ada website.<br />Tambah di halaman Websites dulu.
-          </p>
+          <p className="text-xs text-zinc-600 text-center">Belum ada website.<br />Tambah di halaman Websites dulu.</p>
         </div>
       )}
 

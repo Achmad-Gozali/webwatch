@@ -4,39 +4,55 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity } from 'lucide-react';
-
-interface HistoryEntry {
-  time: string;
-  ms: number;
-}
-
-interface SiteHistory {
-  [siteId: string]: HistoryEntry[];
-}
+import { supabase } from '@/lib/supabase';
 
 export default function ResponseTimeChart() {
   const [data, setData] = useState<{ time: string; avg: number }[]>([]);
   const [avgNow, setAvgNow] = useState<number | null>(null);
 
-  const loadData = useCallback(() => {
-    const raw = localStorage.getItem('webwatch_response_history');
-    if (!raw) return;
+  const loadData = useCallback(async () => {
+    // Ambil 10 monitor_logs terbaru dari semua website
+    const { data: logs, error } = await supabase
+      .from('monitor_logs')
+      .select('response_time, checked_at, status')
+      .neq('status', 'offline')
+      .order('checked_at', { ascending: false })
+      .limit(50);
 
-    const history: SiteHistory = JSON.parse(raw);
-    const allSites = Object.values(history);
-    if (allSites.length === 0) return;
-
-    const maxLen = Math.max(...allSites.map((s) => s.length));
-    const points: { time: string; avg: number }[] = [];
-
-    for (let i = 0; i < Math.min(maxLen, 10); i++) {
-      const vals = allSites
-        .map((s) => s[i]?.ms)
-        .filter((v): v is number => typeof v === 'number');
-      if (vals.length === 0) continue;
-      const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-      points.push({ time: allSites[0][i]?.time ?? `#${i + 1}`, avg });
+    if (error || !logs || logs.length === 0) {
+      // Fallback localStorage
+      const raw = localStorage.getItem('webwatch_response_history');
+      if (!raw) return;
+      const history = JSON.parse(raw);
+      const allSites = Object.values(history) as { time: string; ms: number }[][];
+      if (allSites.length === 0) return;
+      const maxLen = Math.max(...allSites.map((s) => s.length));
+      const points: { time: string; avg: number }[] = [];
+      for (let i = 0; i < Math.min(maxLen, 10); i++) {
+        const vals = allSites.map((s) => s[i]?.ms).filter((v): v is number => typeof v === 'number');
+        if (vals.length === 0) continue;
+        points.push({ time: allSites[0][i]?.time ?? `#${i + 1}`, avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) });
+      }
+      setData(points);
+      if (points.length > 0) setAvgNow(points[points.length - 1].avg);
+      return;
     }
+
+    // Group by waktu (per 5 menit) dan hitung avg
+    const grouped: Record<string, number[]> = {};
+    logs.forEach((log) => {
+      const time = new Date(log.checked_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      if (!grouped[time]) grouped[time] = [];
+      grouped[time].push(log.response_time);
+    });
+
+    const points = Object.entries(grouped)
+      .slice(-10)
+      .reverse()
+      .map(([time, vals]) => ({
+        time,
+        avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+      }));
 
     setData(points);
     if (points.length > 0) setAvgNow(points[points.length - 1].avg);
@@ -44,10 +60,20 @@ export default function ResponseTimeChart() {
 
   useEffect(() => {
     loadData();
-    // Re-load saat tab/window kembali aktif
+
+    // Realtime — auto update kalau ada log baru
+    const channel = supabase
+      .channel('response-time-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadData();
+      })
+      .subscribe();
+
     window.addEventListener('focus', loadData);
     document.addEventListener('visibilitychange', loadData);
+
     return () => {
+      supabase.removeChannel(channel);
       window.removeEventListener('focus', loadData);
       document.removeEventListener('visibilitychange', loadData);
     };
@@ -88,17 +114,15 @@ export default function ResponseTimeChart() {
             </defs>
             <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#52525b' }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 9, fill: '#52525b' }} tickLine={false} axisLine={false} unit="ms" />
-            <Tooltip
-              contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
-              formatter={(value: unknown) => [`${value}ms`, 'Avg']}
-            />
+            <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
+              formatter={(value: unknown) => [`${value}ms`, 'Avg']} />
             <Area type="monotone" dataKey="avg" stroke={color} strokeWidth={2} fill="url(#rtGrad)" dot={false} />
           </AreaChart>
         </ResponsiveContainer>
       ) : (
         <div className="h-[120px] flex items-center justify-center">
           <p className="text-xs text-zinc-600 text-center">
-            Belum ada history.<br />Cek website di halaman Monitoring dulu.
+            Menunggu data dari Supabase.<br />GitHub Actions akan update tiap 5 menit.
           </p>
         </div>
       )}
