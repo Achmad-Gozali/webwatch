@@ -16,7 +16,7 @@ function FilterBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentStatus = searchParams.get('status') ?? 'all';
-  const filters = ['All', 'Online', 'Offline', 'Degraded', 'Belum dicek'];
+  const filters = ['All', 'Online', 'Offline'];
 
   const handleFilter = (f: string) => {
     const params = new URLSearchParams(searchParams.toString());

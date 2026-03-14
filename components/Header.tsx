@@ -216,7 +216,7 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
         {/* Desktop filter */}
         {pathname === '/' && (
           <div className="hidden sm:flex items-center bg-zinc-900 border border-white/5 rounded-full p-1">
-            {(['All', 'Online', 'Offline', 'Degraded', 'Belum dicek'] as string[]).map((f) => (
+            {(['All', 'Online', 'Offline'] as string[]).map((f) => (
               <button key={f} onClick={() => handleFilter(f)}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isFilterActive(f) ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-zinc-500 hover:text-zinc-300'}`}>
                 {f}
