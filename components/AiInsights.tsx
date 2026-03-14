@@ -16,7 +16,6 @@ interface SiteData {
 export default function AiInsights() {
   const [insight, setInsight] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-  // Fix: debounce ref untuk hindari spam ke Groq API saat banyak INSERT masuk sekaligus
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchInsight = useCallback(async () => {
@@ -31,22 +30,17 @@ export default function AiInsights() {
       let sitesData: SiteData[] = [];
 
       if (!error && websites && websites.length > 0) {
-        // Fix: batch query status terbaru — 1 query untuk semua website, bukan N+1
         const { data: logs } = await supabase
           .from('monitor_logs')
           .select('website_id, status, response_time, checked_at')
           .in('website_id', websites.map((w) => w.id))
           .order('checked_at', { ascending: false });
 
-        // Ambil log terbaru per website
         const latestByWebsite: Record<string, { status: string; response_time: number }> = {};
         if (logs) {
           for (const log of logs) {
             if (!latestByWebsite[log.website_id]) {
-              latestByWebsite[log.website_id] = {
-                status: log.status,
-                response_time: log.response_time,
-              };
+              latestByWebsite[log.website_id] = { status: log.status, response_time: log.response_time };
             }
           }
         }
@@ -99,7 +93,7 @@ export default function AiInsights() {
       }
     } catch (error) {
       console.error('Gagal fetch AI:', error);
-      setInsight('Tidak dapat terhubung ke layanan AI. Pastikan GROQ_API_KEY sudah dikonfigurasi.');
+      setInsight('Tidak dapat terhubung ke layanan AI.');
     } finally {
       setLoading(false);
     }
@@ -110,7 +104,6 @@ export default function AiInsights() {
     return () => clearTimeout(timer);
   }, [fetchInsight]);
 
-  // Fix: debounce 30 detik — hindari hit Groq API setiap ada INSERT monitor_logs
   useEffect(() => {
     const channel = supabase
       .channel('aiinsights-monitor-logs')
@@ -127,44 +120,30 @@ export default function AiInsights() {
   }, [fetchInsight]);
 
   return (
-    <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-6 relative overflow-hidden group">
-      <div className="flex justify-between items-center mb-4 relative z-10">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-emerald-500/10 rounded-xl">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">AI Insights</h3>
-            <p className="text-xs text-emerald-400 font-mono">Llama-3 Analysis Active</p>
-          </div>
+    <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-6 relative overflow-hidden group flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-emerald-500" />
+          <h3 className="text-sm font-bold text-white">AI Insights</h3>
         </div>
         <button
           onClick={fetchInsight}
           disabled={loading}
-          className="text-zinc-500 hover:text-white transition-colors disabled:opacity-50 p-2 hover:bg-white/5 rounded-lg"
+          className="text-zinc-500 hover:text-white transition-colors disabled:opacity-40 p-1.5 hover:bg-white/5 rounded-lg"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      <div className="bg-black/30 rounded-2xl p-4 font-mono text-sm min-h-[150px] flex items-start border border-white/5 relative z-10">
+      <div className="flex-1 min-h-[120px] flex items-start">
         {loading ? (
-          <div className="flex flex-col gap-2 w-full mt-1">
-            <div className="flex items-center gap-2 text-emerald-500/70">
-              <div className="w-2 h-4 bg-emerald-500/70 rounded-sm animate-bounce" />
-              <span className="text-xs">Menganalisis website lo...</span>
-            </div>
-            <div className="space-y-2 mt-2">
-              {[80, 60, 40].map((w, i) => (
-                <div key={i} className="h-2 bg-zinc-800 rounded animate-pulse" style={{ width: `${w}%` }} />
-              ))}
-            </div>
+          <div className="w-full space-y-2.5 mt-1">
+            <div className="h-2.5 bg-zinc-800 rounded-full animate-pulse w-full" />
+            <div className="h-2.5 bg-zinc-800 rounded-full animate-pulse w-4/5" />
+            <div className="h-2.5 bg-zinc-800 rounded-full animate-pulse w-3/5" />
           </div>
         ) : (
-          <p className="text-zinc-300 leading-relaxed text-xs">
-            <span className="text-emerald-500 mr-2">{'>_'}</span>
-            {insight}
-          </p>
+          <p className="text-zinc-400 text-sm leading-relaxed">{insight}</p>
         )}
       </div>
 
