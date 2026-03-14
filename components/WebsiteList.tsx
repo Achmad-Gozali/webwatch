@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield, ArrowUpRight, CheckCircle, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '@/lib/supabase';
 
 interface Website {
   id: string;
@@ -30,7 +31,7 @@ export default function WebsiteList() {
   const [checking, setChecking] = useState<Record<string, boolean>>({});
   const [filterStatus, setFilterStatus] = useState('all');
 
-  // Read filter from URL directly — reactive to URL changes
+  // Read filter from URL
   useEffect(() => {
     const readFilter = () => {
       const params = new URLSearchParams(window.location.search);
@@ -38,7 +39,6 @@ export default function WebsiteList() {
     };
     readFilter();
     window.addEventListener('popstate', readFilter);
-    // Poll URL every 300ms to catch router.push changes
     const interval = setInterval(readFilter, 300);
     return () => {
       window.removeEventListener('popstate', readFilter);
@@ -46,10 +46,53 @@ export default function WebsiteList() {
     };
   }, []);
 
+  // Load websites dari Supabase, fallback ke localStorage
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setWebsites(JSON.parse(saved));
+    const loadWebsites = async () => {
+      const { data, error } = await supabase
+        .from('websites')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        setWebsites(data);
+        // Sync ke localStorage biar komponen lain tetap bisa baca
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } else {
+        // Fallback localStorage
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) setWebsites(JSON.parse(saved));
+      }
+    };
+    loadWebsites();
+
+    // Realtime subscription — auto update kalau ada website baru/hapus
+    const channel = supabase
+      .channel('websites-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'websites' }, () => {
+        loadWebsites();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Sync status ke localStorage biar dashboard bisa baca
+  useEffect(() => {
+    if (websites.length === 0) return;
+    const merged = websites.map((w) => {
+      const s = statuses[w.id];
+      return {
+        ...w,
+        status: s?.status?.toLowerCase() ?? undefined,
+        responseTime: s?.responseTime ?? undefined,
+        uptime: s?.uptime ?? undefined,
+        isSSL: s?.isSSL ?? undefined,
+        sslValid: s?.sslValid ?? undefined,
+      };
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  }, [statuses, websites]);
 
   const checkWebsite = useCallback(async (website: Website) => {
     setChecking((prev) => ({ ...prev, [website.id]: true }));
@@ -61,6 +104,13 @@ export default function WebsiteList() {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
       setStatuses((prev) => ({ ...prev, [website.id]: { ...data, uptime: prev[website.id]?.uptime ?? (data.status === 'Online' ? 99.9 : 85.0) } }));
+
+      // Simpan ke monitor_logs
+      await supabase.from('monitor_logs').insert({
+        website_id: website.id,
+        status: data.status.toLowerCase(),
+        response_time: data.responseTime,
+      });
     } catch {
       setStatuses((prev) => ({ ...prev, [website.id]: { status: 'Offline', responseTime: 0, isSSL: website.url.startsWith('https://'), sslValid: false, uptime: prev[website.id]?.uptime ?? 0, checkedAt: new Date().toISOString() } }));
     } finally {
@@ -76,7 +126,6 @@ export default function WebsiteList() {
   const onlineCount = Object.values(statuses).filter((s) => s.status === 'Online').length;
   const offlineCount = Object.values(statuses).filter((s) => s.status === 'Offline').length;
   const checkedCount = Object.keys(statuses).length;
-
   const uncheckedCount = websites.filter((w) => !statuses[w.id] || statuses[w.id].status === 'Checking...').length;
   const degradedCount = Object.values(statuses).filter((s) => s.status === 'Degraded').length;
 
@@ -97,7 +146,6 @@ export default function WebsiteList() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between px-2">
         <h2 className="text-xl font-bold text-white">Websites</h2>
         <div className="flex items-center gap-4">
@@ -111,7 +159,6 @@ export default function WebsiteList() {
         </div>
       </div>
 
-      {/* Table Header */}
       <div className="hidden lg:grid grid-cols-12 gap-4 px-6 py-3 text-xs font-bold text-zinc-500 uppercase tracking-wider">
         <div className="col-span-4">Website</div>
         <div className="col-span-2">Status</div>
@@ -121,7 +168,6 @@ export default function WebsiteList() {
       </div>
 
       <AnimatePresence mode="wait">
-        {/* Offline filter — semua aman */}
         {(isAllOfflineEmpty || isAllDegradedEmpty || isAllUncheckedEmpty) ? (
           <motion.div key="all-good" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="flex flex-col items-center justify-center py-16 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
@@ -146,17 +192,10 @@ export default function WebsiteList() {
         ) : filteredWebsites.length > 0 ? (
           <motion.div key={`list-${filterStatus}`} className="grid grid-cols-1 gap-4">
             {filteredWebsites.map((website, index) => (
-              <WebsiteRow
-                key={website.id}
-                website={website}
-                status={statuses[website.id]}
-                isChecking={checking[website.id]}
-                index={index}
-                onCheck={() => checkWebsite(website)}
-                onClick={() => router.push('/websites')}
-              />
+              <WebsiteRow key={website.id} website={website} status={statuses[website.id]}
+                isChecking={checking[website.id]} index={index}
+                onCheck={() => checkWebsite(website)} onClick={() => router.push('/websites')} />
             ))}
-            {/* Footer info for Online filter */}
             {filterStatus === 'online' && offlineCount === 0 && checkedCount > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="flex items-center justify-center gap-2 py-3 text-xs text-emerald-500/70 font-mono border border-emerald-500/10 rounded-2xl bg-emerald-500/5">
