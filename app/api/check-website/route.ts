@@ -53,7 +53,10 @@ export async function GET(req: NextRequest) {
       'permissions-policy': res.headers.get('permissions-policy'),
     };
 
-    let sslValid = false;
+    // Fix: SSL valid = HTTPS berhasil di-fetch
+    // Kalau fetch HTTPS sukses, berarti SSL-nya valid
+    // ssl-checker.io hanya dipakai untuk info tambahan (expiry, issuer)
+    let sslValid = isSSL; // default: valid kalau HTTPS berhasil diakses
     let sslExpiry: string | null = null;
     let sslDaysLeft: number | null = null;
     let sslIssuer: string | null = null;
@@ -66,7 +69,10 @@ export async function GET(req: NextRequest) {
         });
         if (sslRes.ok) {
           const sslData = await sslRes.json();
-          sslValid = sslData?.valid ?? false;
+
+          // Override ke false HANYA kalau ssl-checker explicitly bilang invalid
+          if (sslData?.valid === false) sslValid = false;
+
           sslExpiry = sslData?.validTo ?? null;
           sslIssuer = sslData?.issuer ?? null;
 
@@ -78,13 +84,11 @@ export async function GET(req: NextRequest) {
               Math.floor((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
             );
           }
-        } else {
-          // Fix: fallback false — jangan misleading valid kalau API gagal
-          sslValid = false;
         }
+        // Kalau ssl-checker gagal / rate limit → tetap pakai sslValid = true
+        // karena fetch HTTPS-nya tadi sudah berhasil
       } catch {
-        // Fix: fallback false, bukan true
-        sslValid = false;
+        // ssl-checker error → tidak mengubah sslValid
       }
     }
 
