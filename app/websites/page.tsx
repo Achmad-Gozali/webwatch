@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
-import { getUptimeColor, getUptimeBg, getUptimeLabel } from '@/lib/uptime';
+import { getUptimeColor, getUptimeBg, getUptimeLabel, calculateUptimeBatch } from '@/lib/uptime';
 import {
   Globe, Plus, Trash2, RefreshCw, Shield, ShieldCheck, ShieldX,
   Clock, Activity, X, CheckCircle, XCircle, AlertCircle,
@@ -28,8 +28,6 @@ interface WebsiteStatus {
   sslValid: boolean;
   sslExpiry: string | null;
   checkedAt: string;
-  // Fix: uptime sekarang dihitung dari monitor_logs, bukan hardcoded
-  uptime: number;
 }
 
 const STORAGE_KEY = 'cloudwatch_websites';
@@ -45,17 +43,11 @@ export default function WebsitesPage() {
   const [checking, setChecking] = useState<Record<string, boolean>>({});
   const [loadingWebsites, setLoadingWebsites] = useState(true);
 
-  // Fix: load uptime akurat dari monitor_logs via API
   const loadUptimes = useCallback(async (sites: Website[]) => {
     if (sites.length === 0) return;
-    const ids = sites.map((w) => w.id).join(',');
-    try {
-      const res = await fetch(`/api/uptime?websiteIds=${ids}&days=30`);
-      const data = await res.json();
-      if (data.uptimes) setUptimes(data.uptimes);
-    } catch {
-      console.error('Gagal load uptime');
-    }
+    const ids = sites.map((w) => w.id);
+    const result = await calculateUptimeBatch(ids, 30);
+    setUptimes(result);
   }, []);
 
   useEffect(() => {
@@ -85,14 +77,27 @@ export default function WebsitesPage() {
     loadWebsites();
   }, [loadUptimes]);
 
+  // Fix: realtime listener untuk uptime
+  useEffect(() => {
+    if (websites.length === 0) return;
+
+    const channel = supabase
+      .channel('websites-page-monitor-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadUptimes(websites);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [websites, loadUptimes]);
+
   useEffect(() => {
     if (websites.length === 0) return;
     const merged = websites.map((w) => ({
       ...w,
       status: statuses[w.id]?.status?.toLowerCase() ?? undefined,
       responseTime: statuses[w.id]?.responseTime ?? undefined,
-      // Fix: simpan uptime akurat ke localStorage
-      uptime: uptimes[w.id] ?? statuses[w.id]?.uptime ?? undefined,
+      uptime: uptimes[w.id] ?? undefined,
       isSSL: statuses[w.id]?.isSSL ?? undefined,
       sslValid: statuses[w.id]?.sslValid ?? undefined,
     }));
@@ -113,35 +118,20 @@ export default function WebsitesPage() {
         sslValid: false,
         sslExpiry: null,
         checkedAt: new Date().toISOString(),
-        uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 100,
       },
     }));
 
     try {
       const res = await fetch(`/api/check-website?url=${encodeURIComponent(website.url)}`);
       const data = await res.json();
+      setStatuses((prev) => ({ ...prev, [website.id]: data }));
 
-      // Simpan ke monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: website.id,
         status: data.status.toLowerCase(),
         response_time: data.responseTime,
       });
-
-      setStatuses((prev) => ({
-        ...prev,
-        [website.id]: {
-          ...data,
-          uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 100,
-        },
-      }));
-
-      // Refresh uptime setelah insert log baru
-      const freshRes = await fetch(`/api/uptime?websiteIds=${website.id}&days=30`);
-      const freshData = await freshRes.json();
-      if (freshData.uptimes) {
-        setUptimes((prev) => ({ ...prev, ...freshData.uptimes }));
-      }
+      // Uptime akan auto-update via realtime listener
     } catch {
       setStatuses((prev) => ({
         ...prev,
@@ -154,23 +144,18 @@ export default function WebsitesPage() {
           sslValid: false,
           sslExpiry: null,
           checkedAt: new Date().toISOString(),
-          uptime: uptimes[website.id] ?? prev[website.id]?.uptime ?? 0,
         },
       }));
     } finally {
       setChecking((prev) => ({ ...prev, [website.id]: false }));
     }
-  }, [uptimes]);
+  }, []);
 
   useEffect(() => {
     if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
   }, [websites.length]); // eslint-disable-line
 
-  const checkAll = () => {
-    websites.forEach((w) => checkWebsite(w));
-    // Refresh semua uptime sekaligus
-    loadUptimes(websites);
-  };
+  const checkAll = () => websites.forEach((w) => checkWebsite(w));
 
   const addWebsite = async () => {
     if (!newName.trim() || !newUrl.trim()) return;
@@ -228,8 +213,6 @@ export default function WebsitesPage() {
   const avgResponseTime = Object.values(statuses).length > 0
     ? Math.round(Object.values(statuses).reduce((acc, s) => acc + (s.responseTime || 0), 0) / Object.values(statuses).length)
     : 0;
-
-  // Rata-rata uptime dari semua website
   const avgUptime = Object.values(uptimes).length > 0
     ? parseFloat((Object.values(uptimes).reduce((a, b) => a + b, 0) / Object.values(uptimes).length).toFixed(1))
     : null;
@@ -260,7 +243,6 @@ export default function WebsitesPage() {
             </div>
           </div>
 
-          {/* Stats — Fix: Avg Uptime sekarang akurat */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Total', value: websites.length, color: 'text-white', sub: 'websites' },
@@ -289,7 +271,6 @@ export default function WebsitesPage() {
             ) : websites.map((website, index) => {
               const s = statuses[website.id];
               const isChecking = checking[website.id];
-              // Fix: ambil uptime dari state uptimes, bukan dari statuses
               const uptime = uptimes[website.id] ?? null;
 
               return (
@@ -325,7 +306,6 @@ export default function WebsitesPage() {
                       </div>
                     </div>
 
-                    {/* Fix: Uptime dari monitor_logs dengan label akurat */}
                     <div className="lg:col-span-2">
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-[10px] text-zinc-500 uppercase font-bold">Uptime 30d</p>

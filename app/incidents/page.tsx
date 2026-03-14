@@ -28,16 +28,8 @@ interface Website {
   url: string;
 }
 
-interface SLATarget {
-  websiteId: string;
-  target: number; // 99, 99.9, 99.99, dll
-}
-
-// SLA targets disimpan di localStorage
 const SLA_KEY = 'webwatch_sla_targets';
-
 const SLA_OPTIONS = [99.99, 99.9, 99.5, 99, 95];
-
 type Tab = 'log' | 'timeline' | 'sla';
 
 export default function IncidentsPage() {
@@ -49,10 +41,16 @@ export default function IncidentsPage() {
   const [slaTargets, setSlaTargets] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
+  const loadUptimes = useCallback(async (sites: Website[]) => {
+    if (sites.length === 0) return;
+    const ids = sites.map((w) => w.id);
+    const result = await calculateUptimeBatch(ids, 30);
+    setUptimes(result);
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
 
-    // Load incidents
     const { data: incidentData, error: incidentError } = await supabase
       .from('incidents')
       .select('*, websites(name, url)')
@@ -61,7 +59,6 @@ export default function IncidentsPage() {
 
     if (!incidentError && incidentData) setIncidents(incidentData);
 
-    // Load websites
     const { data: websiteData } = await supabase
       .from('websites')
       .select('*')
@@ -69,31 +66,42 @@ export default function IncidentsPage() {
 
     if (websiteData && websiteData.length > 0) {
       setWebsites(websiteData);
-      // Load uptime batch
-      const ids = websiteData.map((w: Website) => w.id);
-      const uptimeData = await calculateUptimeBatch(ids, 30);
-      setUptimes(uptimeData);
+      await loadUptimes(websiteData);
     }
 
-    // Load SLA targets dari localStorage
     const saved = localStorage.getItem(SLA_KEY);
     if (saved) setSlaTargets(JSON.parse(saved));
 
     setLoading(false);
-  }, []);
+  }, [loadUptimes]);
 
   useEffect(() => {
     loadData();
 
-    const channel = supabase
-      .channel('incidents-changes')
+    // Fix: realtime untuk incidents DAN uptime
+    const incidentChannel = supabase
+      .channel('incidents-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => {
         loadData();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(incidentChannel); };
   }, [loadData]);
+
+  // Fix: realtime listener untuk uptime
+  useEffect(() => {
+    if (websites.length === 0) return;
+
+    const channel = supabase
+      .channel('incidents-page-monitor-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        loadUptimes(websites);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [websites, loadUptimes]);
 
   const saveSlaTarget = (websiteId: string, target: number) => {
     const updated = { ...slaTargets, [websiteId]: target };
@@ -132,8 +140,6 @@ export default function IncidentsPage() {
         <Header onMenuClick={() => setSidebarOpen(true)} />
 
         <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-8">
-
-          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -148,7 +154,6 @@ export default function IncidentsPage() {
             </button>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Total Incidents', value: incidents.length, color: 'text-white' },
@@ -170,7 +175,6 @@ export default function IncidentsPage() {
             ))}
           </div>
 
-          {/* Tabs */}
           <div className="flex items-center gap-1 bg-zinc-900 border border-white/5 rounded-xl p-1 w-fit">
             {tabs.map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -190,7 +194,6 @@ export default function IncidentsPage() {
             </div>
           ) : (
             <AnimatePresence mode="wait">
-              {/* ─── TAB: INCIDENT LOG ─── */}
               {activeTab === 'log' && (
                 <motion.div key="log" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
                   {incidents.length === 0 ? (
@@ -201,7 +204,6 @@ export default function IncidentsPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Ongoing */}
                       {ongoing.length > 0 && (
                         <div>
                           <h2 className="text-sm font-bold text-rose-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -237,7 +239,6 @@ export default function IncidentsPage() {
                         </div>
                       )}
 
-                      {/* Resolved */}
                       {resolved.length > 0 && (
                         <div>
                           <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -291,23 +292,19 @@ export default function IncidentsPage() {
                 </motion.div>
               )}
 
-              {/* ─── TAB: TIMELINE ─── */}
               {activeTab === 'timeline' && (
                 <motion.div key="timeline" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                   <p className="text-xs text-zinc-500">Visualisasi uptime 30 hari terakhir per website. Hijau = online, merah = down/degraded.</p>
-
                   {websites.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                       <Globe className="w-10 h-10 text-zinc-700 mb-4" />
                       <p className="text-zinc-500">Belum ada website</p>
                     </div>
                   ) : websites.map((website, index) => {
-                    // Ambil incidents untuk website ini
                     const siteIncidents = incidents.filter((i) => i.website_id === website.id);
                     const uptime = uptimes[website.id] ?? 100;
-
-                    // Buat 30 slot (1 slot = 1 hari)
                     const now = new Date();
+
                     const slots = Array.from({ length: 30 }, (_, i) => {
                       const dayStart = new Date(now);
                       dayStart.setDate(now.getDate() - (29 - i));
@@ -315,7 +312,6 @@ export default function IncidentsPage() {
                       const dayEnd = new Date(dayStart);
                       dayEnd.setHours(23, 59, 59, 999);
 
-                      // Cek apakah ada incident di hari ini
                       const hasIncident = siteIncidents.some((inc) => {
                         const start = new Date(inc.started_at);
                         const end = inc.resolved_at ? new Date(inc.resolved_at) : now;
@@ -346,28 +342,21 @@ export default function IncidentsPage() {
                           </div>
                         </div>
 
-                        {/* Timeline bar — 30 hari */}
                         <div className="flex items-center gap-0.5">
                           {slots.map((slot, i) => (
-                            <div
-                              key={i}
+                            <div key={i}
                               title={`${slot.date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} — ${slot.hasIncident ? 'Ada incident' : 'Normal'}`}
-                              className={`flex-1 h-8 rounded-sm transition-all cursor-pointer hover:opacity-80 ${
-                                slot.hasIncident ? 'bg-rose-500/70' : 'bg-emerald-500/70'
-                              }`}
+                              className={`flex-1 h-8 rounded-sm cursor-pointer hover:opacity-80 transition-all ${slot.hasIncident ? 'bg-rose-500/70' : 'bg-emerald-500/70'}`}
                             />
                           ))}
                         </div>
 
-                        {/* Legend */}
                         <div className="flex items-center justify-between mt-2">
                           <p className="text-[10px] text-zinc-600">30 hari lalu</p>
-                          <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-                            {incidentDays > 0 ? (
-                              <span className="text-rose-400">{incidentDays} hari ada incident</span>
-                            ) : (
-                              <span className="text-emerald-400">Tidak ada incident</span>
-                            )}
+                          <div className="text-[10px]">
+                            {incidentDays > 0
+                              ? <span className="text-rose-400">{incidentDays} hari ada incident</span>
+                              : <span className="text-emerald-400">Tidak ada incident</span>}
                           </div>
                           <p className="text-[10px] text-zinc-600">Hari ini</p>
                         </div>
@@ -377,11 +366,9 @@ export default function IncidentsPage() {
                 </motion.div>
               )}
 
-              {/* ─── TAB: SLA TRACKING ─── */}
               {activeTab === 'sla' && (
                 <motion.div key="sla" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                   <p className="text-xs text-zinc-500">Set target uptime per website. WebWatch akan kasih warning kalau target tidak tercapai.</p>
-
                   {websites.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                       <Globe className="w-10 h-10 text-zinc-700 mb-4" />
@@ -395,30 +382,21 @@ export default function IncidentsPage() {
 
                     return (
                       <motion.div key={website.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}
-                        className={`bg-zinc-900/40 border rounded-2xl p-5 transition-all ${
-                          isMet ? 'border-white/5' : 'border-rose-500/30 bg-rose-500/5'
-                        }`}>
+                        className={`bg-zinc-900/40 border rounded-2xl p-5 transition-all ${isMet ? 'border-white/5' : 'border-rose-500/30 bg-rose-500/5'}`}>
                         <div className="flex items-start justify-between gap-4 mb-4">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isMet ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
-                              {isMet
-                                ? <CheckCircle className="w-4 h-4 text-emerald-400" />
-                                : <AlertTriangle className="w-4 h-4 text-rose-400" />}
+                              {isMet ? <CheckCircle className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
                             </div>
                             <div>
                               <p className="font-bold text-white text-sm">{website.name}</p>
                               <p className="text-xs text-zinc-500 font-mono">{website.url}</p>
                             </div>
                           </div>
-
-                          {/* SLA Target Selector */}
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-xs text-zinc-500">Target:</span>
-                            <select
-                              value={target}
-                              onChange={(e) => saveSlaTarget(website.id, parseFloat(e.target.value))}
-                              className="bg-zinc-800 border border-white/10 text-white text-xs font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-emerald-500/50"
-                            >
+                            <select value={target} onChange={(e) => saveSlaTarget(website.id, parseFloat(e.target.value))}
+                              className="bg-zinc-800 border border-white/10 text-white text-xs font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-emerald-500/50">
                               {SLA_OPTIONS.map((opt) => (
                                 <option key={opt} value={opt}>{opt}%</option>
                               ))}
@@ -426,7 +404,6 @@ export default function IncidentsPage() {
                           </div>
                         </div>
 
-                        {/* Progress */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-zinc-500">Uptime 30 hari</span>
@@ -436,21 +413,11 @@ export default function IncidentsPage() {
                               <span className="text-zinc-400">target {target}%</span>
                             </div>
                           </div>
-
-                          {/* Bar dengan marker target */}
                           <div className="relative h-3 bg-zinc-800 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-700 ${isMet ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                              style={{ width: `${Math.min(uptime, 100)}%` }}
-                            />
-                            {/* Target marker */}
-                            <div
-                              className="absolute top-0 bottom-0 w-0.5 bg-white/40"
-                              style={{ left: `${target}%` }}
-                            />
+                            <div className={`h-full rounded-full transition-all duration-700 ${isMet ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                              style={{ width: `${Math.min(uptime, 100)}%` }} />
+                            <div className="absolute top-0 bottom-0 w-0.5 bg-white/40" style={{ left: `${target}%` }} />
                           </div>
-
-                          {/* Status */}
                           <div className="flex items-center justify-between">
                             {isMet ? (
                               <div className="flex items-center gap-1.5 text-xs text-emerald-400">
@@ -473,7 +440,6 @@ export default function IncidentsPage() {
                     );
                   })}
 
-                  {/* Summary */}
                   {websites.length > 0 && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5">
@@ -483,16 +449,8 @@ export default function IncidentsPage() {
                       </h3>
                       <div className="grid grid-cols-3 gap-4">
                         {[
-                          {
-                            label: 'Target Tercapai',
-                            value: websites.filter((w) => (uptimes[w.id] ?? 100) >= (slaTargets[w.id] ?? 99)).length,
-                            color: 'text-emerald-400',
-                          },
-                          {
-                            label: 'Target Tidak Tercapai',
-                            value: websites.filter((w) => (uptimes[w.id] ?? 100) < (slaTargets[w.id] ?? 99)).length,
-                            color: 'text-rose-400',
-                          },
+                          { label: 'Target Tercapai', value: websites.filter((w) => (uptimes[w.id] ?? 100) >= (slaTargets[w.id] ?? 99)).length, color: 'text-emerald-400' },
+                          { label: 'Target Tidak Tercapai', value: websites.filter((w) => (uptimes[w.id] ?? 100) < (slaTargets[w.id] ?? 99)).length, color: 'text-rose-400' },
                           {
                             label: 'Avg Uptime',
                             value: `${Object.values(uptimes).length > 0

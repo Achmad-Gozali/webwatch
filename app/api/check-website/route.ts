@@ -25,7 +25,6 @@ export async function GET(req: NextRequest) {
     const responseTime = Date.now() - startTime;
     const isSSL = url.startsWith('https://');
 
-    // Extract security headers
     const securityHeaders: Record<string, string | null> = {
       'strict-transport-security': res.headers.get('strict-transport-security'),
       'content-security-policy': res.headers.get('content-security-policy'),
@@ -66,9 +65,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Calculate uptime (simplified)
-    const uptime = res.ok ? 99.9 : 0;
-
     return NextResponse.json({
       url,
       status: res.ok ? 'Online' : 'Degraded',
@@ -80,7 +76,7 @@ export async function GET(req: NextRequest) {
       sslDaysLeft,
       sslIssuer,
       headers: securityHeaders,
-      uptime,
+      // Fix: hapus uptime hardcoded 99.9 — uptime dihitung dari monitor_logs via lib/uptime.ts
       checkedAt: new Date().toISOString(),
     });
   } catch (error: unknown) {
@@ -98,7 +94,6 @@ export async function GET(req: NextRequest) {
       sslDaysLeft: null,
       sslIssuer: null,
       headers: {},
-      uptime: 0,
       checkedAt: new Date().toISOString(),
     });
   }

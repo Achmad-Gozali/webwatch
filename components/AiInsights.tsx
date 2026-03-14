@@ -3,8 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Sparkles, RefreshCw } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { calculateUptimeBatch } from '@/lib/uptime';
 
-interface Website {
+interface SiteData {
   name: string;
   status?: string;
   responseTime?: number;
@@ -18,17 +20,67 @@ export default function AiInsights() {
   const fetchInsight = useCallback(async () => {
     setLoading(true);
     setInsight('');
-    try {
-      const raw = localStorage.getItem('cloudwatch_websites');
-      const sites: Website[] = raw ? JSON.parse(raw) : [];
 
-      // Filter hanya site yang sudah dicek
-      const checkedSites = sites.filter(
+    try {
+      // Fix: baca data dari Supabase, bukan localStorage
+      const { data: websites, error } = await supabase
+        .from('websites')
+        .select('id, name, url');
+
+      let sitesData: SiteData[] = [];
+
+      if (!error && websites && websites.length > 0) {
+        // Ambil status terbaru tiap website dari monitor_logs
+        const withStatus = await Promise.all(
+          websites.map(async (site) => {
+            const { data: log } = await supabase
+              .from('monitor_logs')
+              .select('status, response_time')
+              .eq('website_id', site.id)
+              .order('checked_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            return {
+              name: site.name,
+              status: log?.status ?? undefined,
+              responseTime: log?.response_time ?? undefined,
+            };
+          })
+        );
+
+        // Ambil uptime batch
+        const ids = websites.map((w) => w.id);
+        const uptimes = await calculateUptimeBatch(ids, 30);
+
+        sitesData = withStatus.map((s, i) => ({
+          ...s,
+          uptime: uptimes[websites[i].id] ?? undefined,
+        }));
+      } else {
+        // Fallback localStorage kalau Supabase gagal
+        const raw = localStorage.getItem('cloudwatch_websites');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          sitesData = parsed.filter((s: SiteData) =>
+            s.status && s.status !== 'undefined' && s.status !== 'checking...'
+          );
+        }
+      }
+
+      // Filter yang udah dicek
+      const validSites = sitesData.filter(
         (s) => s.status && s.status !== 'undefined' && s.status !== 'checking...'
       );
 
+      if (validSites.length === 0) {
+        setInsight('Belum ada data website. Tambah website di halaman Websites dulu.');
+        setLoading(false);
+        return;
+      }
+
       const sitesParam = encodeURIComponent(JSON.stringify(
-        checkedSites.map((s) => ({
+        validSites.map((s) => ({
           name: s.name,
           status: s.status,
           responseTime: s.responseTime,
@@ -36,7 +88,6 @@ export default function AiInsights() {
         }))
       ));
 
-      // Cache bust dengan timestamp biar tiap klik refresh dapat data baru
       const res = await fetch(`/api/insights?sites=${sitesParam}&t=${Date.now()}`);
       const contentType = res.headers.get('content-type');
       if (contentType?.includes('application/json')) {
@@ -54,9 +105,20 @@ export default function AiInsights() {
   }, []);
 
   useEffect(() => {
-    // Delay sedikit biar localStorage sempat ke-update dari halaman Websites
     const timer = setTimeout(fetchInsight, 500);
     return () => clearTimeout(timer);
+  }, [fetchInsight]);
+
+  // Realtime: refresh insights kalau ada data baru
+  useEffect(() => {
+    const channel = supabase
+      .channel('aiinsights-monitor-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
+        fetchInsight();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [fetchInsight]);
 
   return (
@@ -89,7 +151,7 @@ export default function AiInsights() {
             </div>
             <div className="space-y-2 mt-2">
               {[80, 60, 40].map((w, i) => (
-                <div key={i} className={`h-2 bg-zinc-800 rounded animate-pulse`} style={{ width: `${w}%` }} />
+                <div key={i} className="h-2 bg-zinc-800 rounded animate-pulse" style={{ width: `${w}%` }} />
               ))}
             </div>
           </div>
