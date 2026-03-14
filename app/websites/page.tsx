@@ -42,7 +42,6 @@ export default function WebsitesPage() {
   const [checking, setChecking] = useState<Record<string, boolean>>({});
   const [loadingWebsites, setLoadingWebsites] = useState(true);
 
-  // Load websites dari Supabase, fallback ke localStorage
   useEffect(() => {
     const loadWebsites = async () => {
       setLoadingWebsites(true);
@@ -50,12 +49,10 @@ export default function WebsitesPage() {
       if (!error && data && data.length > 0) {
         setWebsites(data);
       } else {
-        // Fallback: load dari localStorage
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const localSites = JSON.parse(saved);
           setWebsites(localSites);
-          // Migrate localStorage → Supabase
           for (const site of localSites) {
             await supabase.from('websites').upsert({ name: site.name, url: site.url }, { onConflict: 'url' });
           }
@@ -66,7 +63,6 @@ export default function WebsitesPage() {
     loadWebsites();
   }, []);
 
-  // Sync ke localStorage juga biar dashboard tetap bisa baca
   useEffect(() => {
     if (websites.length === 0) return;
     const merged = websites.map((w) => {
@@ -110,7 +106,6 @@ export default function WebsitesPage() {
       };
       setStatuses((prev) => ({ ...prev, [website.id]: result }));
 
-      // Simpan hasil ke Supabase monitor_logs
       await supabase.from('monitor_logs').insert({
         website_id: website.id,
         status: data.status.toLowerCase(),
@@ -147,7 +142,6 @@ export default function WebsitesPage() {
     let url = newUrl.trim();
     if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
 
-    // Simpan ke Supabase
     const { data, error } = await supabase
       .from('websites')
       .insert({ name: newName.trim(), url })
@@ -167,7 +161,6 @@ export default function WebsitesPage() {
   };
 
   const removeWebsite = async (id: string) => {
-    // Hapus dari Supabase
     await supabase.from('websites').delete().eq('id', id);
     setWebsites((prev) => prev.filter((w) => w.id !== id));
     setStatuses((prev) => { const next = { ...prev }; delete next[id]; return next; });

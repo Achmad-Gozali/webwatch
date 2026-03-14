@@ -1,7 +1,7 @@
 // PATH: components/Charts/UptimeChart.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -16,7 +16,8 @@ interface Website {
 export default function UptimeChart() {
   const [sites, setSites] = useState<Website[]>([]);
 
-  const loadSites = async () => {
+  // Fix: wrap loadSites dalam useCallback agar stabil sebagai dependency
+  const loadSites = useCallback(async () => {
     const { data: websites, error } = await supabase
       .from('websites')
       .select('id, name, url');
@@ -42,7 +43,7 @@ export default function UptimeChart() {
 
     setSites(withStatus);
     localStorage.setItem('cloudwatch_websites', JSON.stringify(withStatus));
-  };
+  }, []);
 
   useEffect(() => {
     loadSites();
@@ -55,7 +56,7 @@ export default function UptimeChart() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []); // eslint-disable-line
+  }, [loadSites]);
 
   const online = sites.filter((s) => s.status === 'online').length;
   const degraded = sites.filter((s) => s.status === 'degraded').length;

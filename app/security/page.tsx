@@ -137,8 +137,10 @@ export default function SecurityPage() {
     }
   }, []);
 
-  // Load dari Supabase lalu auto-check semua
+  // Fix: tambahkan checkSecurity ke dependency array dengan cleanup flag
   useEffect(() => {
+    let cancelled = false;
+
     const loadAndCheck = async () => {
       setLoadingWebsites(true);
 
@@ -147,6 +149,8 @@ export default function SecurityPage() {
         .select('*')
         .order('created_at', { ascending: true });
 
+      if (cancelled) return;
+
       if (!error && data && data.length > 0) {
         const sites: WebsiteSecurity[] = data.map((w: Website) => ({
           ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null,
@@ -154,13 +158,12 @@ export default function SecurityPage() {
         setWebsites(sites);
         setLoadingWebsites(false);
 
-        // Auto-check satu per satu dengan delay
         for (const site of sites) {
+          if (cancelled) break;
           await checkSecurity(site);
           await new Promise((r) => setTimeout(r, 500));
         }
       } else {
-        // Fallback localStorage
         const saved = localStorage.getItem('cloudwatch_websites');
         if (saved) {
           const parsed: Website[] = JSON.parse(saved);
@@ -170,6 +173,7 @@ export default function SecurityPage() {
           setWebsites(sites);
           setLoadingWebsites(false);
           for (const site of sites) {
+            if (cancelled) break;
             await checkSecurity(site);
             await new Promise((r) => setTimeout(r, 500));
           }
@@ -180,13 +184,14 @@ export default function SecurityPage() {
     };
 
     loadAndCheck();
-  }, []); // eslint-disable-line
+    return () => { cancelled = true; };
+  }, [checkSecurity]);
 
-  const checkAll = () => {
+  const checkAll = useCallback(() => {
     websites.forEach((w, i) => {
       setTimeout(() => checkSecurity(w), i * 500);
     });
-  };
+  }, [websites, checkSecurity]);
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white">

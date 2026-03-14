@@ -1,7 +1,7 @@
 // PATH: app/page.tsx — Dashboard (Halaman Utama)
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import ResponseTimeChart from '@/components/Charts/ResponseTimeChart';
@@ -46,13 +46,7 @@ function FilterBar() {
 }
 
 export default function Dashboard() {
-  const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 2000);
-    return () => clearTimeout(timer);
-  }, []);
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white font-sans selection:bg-emerald-500/30">
@@ -79,37 +73,23 @@ export default function Dashboard() {
         <Suspense fallback={null}><FilterBar /></Suspense>
 
         <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-8">
-          {loading ? (
-            <div className="space-y-8">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-[240px] bg-zinc-900/50 border border-white/5 rounded-3xl animate-pulse" />
-                ))}
-              </div>
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 bg-zinc-900/50 border border-white/5 rounded-2xl animate-pulse" />
-                ))}
-              </div>
+          {/* Fix: hapus loading state hardcoded 2 detik — render langsung */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="space-y-8"
+          >
+            {/* Charts & AI Insights */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <ResponseTimeChart />
+              <UptimeChart />
+              <AiInsights />
             </div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-8"
-            >
-              {/* Charts & AI Insights */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <ResponseTimeChart />
-                <UptimeChart />
-                <AiInsights />
-              </div>
 
-              {/* Website List */}
-              <WebsiteList />
-            </motion.div>
-          )}
+            {/* Website List */}
+            <WebsiteList />
+          </motion.div>
         </div>
       </main>
     </div>

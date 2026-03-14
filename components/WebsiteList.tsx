@@ -1,8 +1,8 @@
 // PATH: components/WebsiteList.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Globe, RefreshCw, Clock, ShieldCheck, ShieldX, Shield, ArrowUpRight, CheckCircle, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -23,28 +23,16 @@ interface WebsiteStatus {
 
 const STORAGE_KEY = 'cloudwatch_websites';
 
-export default function WebsiteList() {
+// Fix: Pisahkan ke inner component karena useSearchParams butuh Suspense boundary
+function WebsiteListContent() {
   const router = useRouter();
+  // Fix: gunakan useSearchParams dari Next.js — reactive, tidak perlu polling
+  const searchParams = useSearchParams();
+  const filterStatus = searchParams.get('status') ?? 'all';
+
   const [websites, setWebsites] = useState<Website[]>([]);
   const [statuses, setStatuses] = useState<Record<string, WebsiteStatus>>({});
   const [checking, setChecking] = useState<Record<string, boolean>>({});
-  const [filterStatus, setFilterStatus] = useState('all');
-
-  // Read filter from URL directly — reactive to URL changes
-  useEffect(() => {
-    const readFilter = () => {
-      const params = new URLSearchParams(window.location.search);
-      setFilterStatus(params.get('status') ?? 'all');
-    };
-    readFilter();
-    window.addEventListener('popstate', readFilter);
-    // Poll URL every 300ms to catch router.push changes
-    const interval = setInterval(readFilter, 300);
-    return () => {
-      window.removeEventListener('popstate', readFilter);
-      clearInterval(interval);
-    };
-  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -76,8 +64,6 @@ export default function WebsiteList() {
   const onlineCount = Object.values(statuses).filter((s) => s.status === 'Online').length;
   const offlineCount = Object.values(statuses).filter((s) => s.status === 'Offline').length;
   const checkedCount = Object.keys(statuses).length;
-
-  const uncheckedCount = websites.filter((w) => !statuses[w.id] || statuses[w.id].status === 'Checking...').length;
   const degradedCount = Object.values(statuses).filter((s) => s.status === 'Degraded').length;
 
   const filteredWebsites = websites.filter((w) => {
@@ -117,7 +103,6 @@ export default function WebsiteList() {
       </div>
 
       <AnimatePresence mode="wait">
-        {/* Offline filter — semua aman */}
         {isAllOfflineEmpty ? (
           <motion.div key="all-good" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="flex flex-col items-center justify-center py-16 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
@@ -148,7 +133,6 @@ export default function WebsiteList() {
                 onClick={() => router.push('/websites')}
               />
             ))}
-            {/* Footer info for Online filter */}
             {filterStatus === 'online' && offlineCount === 0 && checkedCount > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="flex items-center justify-center gap-2 py-3 text-xs text-emerald-500/70 font-mono border border-emerald-500/10 rounded-2xl bg-emerald-500/5">
@@ -222,5 +206,20 @@ function WebsiteRow({ website, status: s, isChecking, index, onClick }: {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// Fix: Wrap dengan Suspense karena useSearchParams butuh Suspense boundary
+export default function WebsiteList() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-20 bg-zinc-900/50 border border-white/5 rounded-2xl animate-pulse" />
+        ))}
+      </div>
+    }>
+      <WebsiteListContent />
+    </Suspense>
   );
 }

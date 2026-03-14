@@ -155,7 +155,7 @@ function DocCard({ section }: { section: DocSection }) {
 
       <div className="space-y-2">
         {section.items.map((item, i) => (
-          <div key={i} className="border border-white/5 rounded-2xl overflow-hidden">
+          <div key={`${section.title}-${i}`} className="border border-white/5 rounded-2xl overflow-hidden">
             <button
               onClick={() => setOpenIndex(openIndex === i ? null : i)}
               className="w-full flex items-center justify-between p-4 text-left hover:bg-white/5 transition-colors"
@@ -200,8 +200,8 @@ export default function HelpPage() {
             <p className="text-zinc-500 text-sm">Panduan penggunaan fitur WebWatch</p>
           </div>
 
-          {docs.map((section, i) => (
-            <DocCard key={i} section={section} />
+          {docs.map((section) => (
+            <DocCard key={section.title} section={section} />
           ))}
         </div>
       </main>

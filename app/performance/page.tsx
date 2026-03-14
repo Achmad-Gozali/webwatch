@@ -84,8 +84,10 @@ export default function PerformancePage() {
     }
   }, []);
 
-  // Load dari Supabase lalu auto-analyze semua
+  // Fix: tambahkan checkPerformance ke dependency array dengan proper async handler
   useEffect(() => {
+    let cancelled = false;
+
     const loadAndAnalyze = async () => {
       setLoadingWebsites(true);
 
@@ -94,6 +96,8 @@ export default function PerformancePage() {
         .select('*')
         .order('created_at', { ascending: true });
 
+      if (cancelled) return;
+
       if (!error && data && data.length > 0) {
         const sites: WebsitePerf[] = data.map((w: Website) => ({
           ...w, scores: null, loading: true, error: false, checkedAt: null,
@@ -101,10 +105,10 @@ export default function PerformancePage() {
         setWebsites(sites);
         setLoadingWebsites(false);
 
-        // Auto-analyze satu per satu dengan delay biar gak rate limit
         for (const site of sites) {
+          if (cancelled) break;
           await checkPerformance(site, 'desktop');
-          await new Promise((r) => setTimeout(r, 1000)); // delay 1s antar request
+          await new Promise((r) => setTimeout(r, 1000));
         }
       } else {
         // Fallback localStorage
@@ -117,6 +121,7 @@ export default function PerformancePage() {
           setWebsites(sites);
           setLoadingWebsites(false);
           for (const site of sites) {
+            if (cancelled) break;
             await checkPerformance(site, 'desktop');
             await new Promise((r) => setTimeout(r, 1000));
           }
@@ -127,22 +132,23 @@ export default function PerformancePage() {
     };
 
     loadAndAnalyze();
-  }, []); // eslint-disable-line
+    return () => { cancelled = true; };
+  }, [checkPerformance]);
 
-  const checkAll = () => {
+  const checkAll = useCallback(() => {
     setWebsites((prev) => prev.map((w) => ({ ...w, scores: null, error: false })));
     websites.forEach((w, i) => {
       setTimeout(() => checkPerformance(w, device), i * 1500);
     });
-  };
+  }, [websites, device, checkPerformance]);
 
-  const handleDeviceSwitch = (newDevice: 'desktop' | 'mobile') => {
+  const handleDeviceSwitch = useCallback((newDevice: 'desktop' | 'mobile') => {
     setDevice(newDevice);
     setWebsites((prev) => prev.map((w) => ({ ...w, scores: null, error: false, checkedAt: null })));
     websites.forEach((w, i) => {
       setTimeout(() => checkPerformance(w, newDevice), i * 1500);
     });
-  };
+  }, [websites, checkPerformance]);
 
   const avgScores = websites.length > 0 && websites.some((w) => w.scores)
     ? metrics.map((m) => {

@@ -2,9 +2,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// Fix: Pakai SERVICE_ROLE_KEY untuk operasi server-side, bukan ANON_KEY
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('[WebWatch] SUPABASE_SERVICE_ROLE_KEY tidak ditemukan. Tambahkan di .env.local dan Vercel environment variables.');
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function GET(request: Request) {
@@ -54,7 +59,6 @@ export async function GET(request: Request) {
         .single();
 
       if (status === 'offline' || status === 'degraded') {
-        // Buat incident baru kalau belum ada
         if (!ongoingIncident) {
           await supabase.from('incidents').insert({
             website_id: site.id,
@@ -63,7 +67,6 @@ export async function GET(request: Request) {
           });
         }
       } else if (status === 'online' && ongoingIncident) {
-        // Resolve incident kalau website balik online
         const startedAt = new Date(ongoingIncident.started_at);
         const resolvedAt = new Date();
         const durationMinutes = Math.round((resolvedAt.getTime() - startedAt.getTime()) / 60000);

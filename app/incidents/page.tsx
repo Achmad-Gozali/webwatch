@@ -38,7 +38,6 @@ export default function IncidentsPage() {
   useEffect(() => {
     loadIncidents();
 
-    // Realtime
     const channel = supabase
       .channel('incidents-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => {
@@ -47,7 +46,7 @@ export default function IncidentsPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, []); // eslint-disable-line
 
   const ongoing = incidents.filter((i) => i.status === 'ongoing');
   const resolved = incidents.filter((i) => i.status === 'resolved');

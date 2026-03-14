@@ -64,12 +64,16 @@ export default function MonitoringPage() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix: simpan websites di ref agar auto refresh selalu dapat data terbaru
+  const websitesRef = useRef<WebsiteHistory[]>([]);
 
-  // Load websites + history dari Supabase
+  useEffect(() => {
+    websitesRef.current = websites;
+  }, [websites]);
+
   const loadFromSupabase = useCallback(async () => {
     setLoading(true);
 
-    // Load websites
     const { data: sitesData } = await supabase
       .from('websites')
       .select('*')
@@ -80,7 +84,6 @@ export default function MonitoringPage() {
       return;
     }
 
-    // Load monitor_logs per website (20 terbaru)
     const results = await Promise.all(
       sitesData.map(async (site: Website) => {
         const { data: logs } = await supabase
@@ -115,7 +118,6 @@ export default function MonitoringPage() {
   useEffect(() => {
     loadFromSupabase();
 
-    // Realtime subscription — auto reload kalau ada data baru di monitor_logs
     const channel = supabase
       .channel('monitor-logs-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
@@ -126,7 +128,6 @@ export default function MonitoringPage() {
     return () => { supabase.removeChannel(channel); };
   }, [loadFromSupabase]);
 
-  // Ping manual + simpan ke Supabase
   const checkAll = useCallback(async (sites: WebsiteHistory[]) => {
     const timeLabel = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -151,24 +152,22 @@ export default function MonitoringPage() {
     );
 
     setLastUpdated(timeLabel);
-    // Reload dari Supabase biar data fresh
     await loadFromSupabase();
   }, [loadFromSupabase]);
 
-  // Auto refresh every 30 seconds
+  // Fix: gunakan websitesRef agar interval tidak stale
   useEffect(() => {
     if (isAutoRefresh) {
-      checkAll(websites);
+      checkAll(websitesRef.current);
       intervalRef.current = setInterval(() => {
-        setWebsites((prev) => { checkAll(prev); return prev; });
+        checkAll(websitesRef.current);
       }, 30000);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isAutoRefresh]); // eslint-disable-line
+  }, [isAutoRefresh, checkAll]);
 
-  // Build combined chart data
   const chartData = (() => {
     if (websites.length === 0) return [];
     const maxLen = Math.max(...websites.map((w) => w.history.length));
@@ -242,7 +241,6 @@ export default function MonitoringPage() {
             ))}
           </div>
 
-          {/* Loading state */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <RefreshCw className="w-8 h-8 text-zinc-600 animate-spin mr-3" />
@@ -250,7 +248,6 @@ export default function MonitoringPage() {
             </div>
           ) : (
             <>
-              {/* Combined Chart */}
               {chartData.length > 1 && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                   className="bg-zinc-900/40 border border-white/5 rounded-3xl p-6 lg:p-8">
@@ -275,7 +272,6 @@ export default function MonitoringPage() {
                 </motion.div>
               )}
 
-              {/* Per Website Cards */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {websites.length === 0 ? (
                   <div className="col-span-2 flex flex-col items-center justify-center py-20 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
