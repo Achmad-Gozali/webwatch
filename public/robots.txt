@@ -4,7 +4,7 @@ User-agent: *
 Allow: /
 Allow: /status
 
-# Halaman dashboard — jangan diindex
+# Halaman dashboard — jangan diindex (Privasi & Keamanan)
 Disallow: /dashboard
 Disallow: /websites
 Disallow: /monitoring
@@ -14,4 +14,5 @@ Disallow: /incidents
 Disallow: /help
 Disallow: /api/
 
-Sitemap: https://webwatch-id.vercel.app/sitemap.xml
+# Arahkan ke peta situs domain utama
+Sitemap: https://agcode.biz.id/sitemap.xml
