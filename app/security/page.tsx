@@ -1,4 +1,3 @@
-// PATH: app/security/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -90,7 +89,6 @@ function getScoreColor(score: number) {
   return 'text-rose-400';
 }
 
-// Fix: pakai inline style untuk background opacity — hindari dynamic Tailwind class yang di-purge
 function getScoreBadgeStyle(score: number): React.CSSProperties {
   if (score >= 80) return { backgroundColor: 'rgba(16,185,129,0.15)' };
   if (score >= 50) return { backgroundColor: 'rgba(245,158,11,0.15)' };
@@ -151,19 +149,9 @@ export default function SecurityPage() {
 
       if (cancelled) return;
 
-      if (!error && data && data.length > 0) {
-        const sites: WebsiteSecurity[] = data.map((w: Website) => ({
-          ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null,
-        }));
-        setWebsites(sites);
-        setLoadingWebsites(false);
-
-        for (const site of sites) {
-          if (cancelled) break;
-          await checkSecurity(site);
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      } else {
+      // Fix: pisahkan antara "error" vs "data kosong"
+      if (error) {
+        // Supabase error → fallback ke localStorage
         const saved = localStorage.getItem('cloudwatch_websites');
         if (saved) {
           const parsed: Website[] = JSON.parse(saved);
@@ -180,6 +168,18 @@ export default function SecurityPage() {
         } else {
           setLoadingWebsites(false);
         }
+      } else {
+        // Supabase OK (meski data kosong) → pakai data Supabase
+        const sites: WebsiteSecurity[] = (data ?? []).map((w: Website) => ({
+          ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null,
+        }));
+        setWebsites(sites);
+        setLoadingWebsites(false);
+        for (const site of sites) {
+          if (cancelled) break;
+          await checkSecurity(site);
+          await new Promise((r) => setTimeout(r, 500));
+        }
       }
     };
 
@@ -195,7 +195,11 @@ export default function SecurityPage() {
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white">
-      <Sidebar className={`fixed lg:sticky lg:flex z-50 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} />
+      {/* Fix: tambah onClose prop yang sebelumnya missing */}
+      <Sidebar
+        className={`fixed lg:sticky lg:flex z-50 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       <main className="flex-1 flex flex-col min-w-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
@@ -239,7 +243,6 @@ export default function SecurityPage() {
                       <div>
                         <div className="flex items-center gap-3">
                           <h3 className="text-lg font-bold text-white">{website.name}</h3>
-                          {/* Fix: pakai inline style untuk background — hindari dynamic class Tailwind */}
                           {score !== null && (
                             <span
                               className={`text-xs font-bold px-2 py-0.5 rounded-full ${getScoreColor(score)}`}

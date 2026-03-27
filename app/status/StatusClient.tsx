@@ -1,6 +1,6 @@
-// PATH: app/status/StatusClient.tsx
 'use client';
 
+// PATH: app/status/StatusClient.tsx
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@supabase/supabase-js';
@@ -75,52 +75,63 @@ function formatDuration(minutes: number | null) {
   return m > 0 ? `${h}j ${m}m` : `${h} jam`;
 }
 
+// Fix: tambah try-catch supaya component tidak crash kalau Supabase query gagal
 async function fetchStatusData() {
-  const [{ data: websites }, { data: incidents }, { data: logs }] = await Promise.all([
-    supabase.from('websites').select('id, name, url').order('created_at', { ascending: true }),
-    supabase.from('incidents').select('*, websites(name, url)').order('started_at', { ascending: false }).limit(10),
-    supabase.from('monitor_logs').select('website_id, status, response_time, checked_at')
-      .order('checked_at', { ascending: false }).limit(500),
-  ]);
+  try {
+    const [{ data: websites }, { data: incidents }, { data: logs }] = await Promise.all([
+      supabase.from('websites').select('id, name, url').order('created_at', { ascending: true }),
+      supabase.from('incidents').select('*, websites(name, url)').order('started_at', { ascending: false }).limit(10),
+      supabase.from('monitor_logs').select('website_id, status, response_time, checked_at')
+        .order('checked_at', { ascending: false }).limit(500),
+    ]);
 
-  const websiteStats: WebsiteStat[] = (websites ?? []).map((site) => {
-    const siteLogs = (logs ?? []).filter((l) => l.website_id === site.id);
-    const latest = siteLogs[0];
-    const last30Days = new Date();
-    last30Days.setDate(last30Days.getDate() - 30);
-    const recentLogs = siteLogs.filter((l) => new Date(l.checked_at) >= last30Days);
-    const uptime = recentLogs.length > 0
-      ? parseFloat(((recentLogs.filter((l) => l.status === 'online').length / recentLogs.length) * 100).toFixed(2))
-      : 100;
+    const websiteStats: WebsiteStat[] = (websites ?? []).map((site) => {
+      const siteLogs = (logs ?? []).filter((l) => l.website_id === site.id);
+      const latest = siteLogs[0];
+      const last30Days = new Date();
+      last30Days.setDate(last30Days.getDate() - 30);
+      const recentLogs = siteLogs.filter((l) => new Date(l.checked_at) >= last30Days);
+      const uptime = recentLogs.length > 0
+        ? parseFloat(((recentLogs.filter((l) => l.status === 'online').length / recentLogs.length) * 100).toFixed(2))
+        : 100;
 
-    const now = new Date();
-    const slots = Array.from({ length: 45 }, (_, i) => {
-      const slotEnd = new Date(now.getTime() - i * 16 * 60 * 60 * 1000);
-      const slotStart = new Date(slotEnd.getTime() - 16 * 60 * 60 * 1000);
-      const slotLogs = siteLogs.filter((l) => {
-        const t = new Date(l.checked_at);
-        return t >= slotStart && t <= slotEnd;
-      });
-      if (slotLogs.length === 0) return 'unknown';
-      if (slotLogs.some((l) => l.status === 'offline')) return 'offline';
-      if (slotLogs.some((l) => l.status === 'degraded')) return 'degraded';
-      return 'online';
-    }).reverse();
+      const now = new Date();
+      const slots = Array.from({ length: 45 }, (_, i) => {
+        const slotEnd = new Date(now.getTime() - i * 16 * 60 * 60 * 1000);
+        const slotStart = new Date(slotEnd.getTime() - 16 * 60 * 60 * 1000);
+        const slotLogs = siteLogs.filter((l) => {
+          const t = new Date(l.checked_at);
+          return t >= slotStart && t <= slotEnd;
+        });
+        if (slotLogs.length === 0) return 'unknown';
+        if (slotLogs.some((l) => l.status === 'offline')) return 'offline';
+        if (slotLogs.some((l) => l.status === 'degraded')) return 'degraded';
+        return 'online';
+      }).reverse();
+
+      return {
+        ...site,
+        status: latest?.status ?? 'unknown',
+        responseTime: latest?.status !== 'offline' ? (latest?.response_time ?? null) : null,
+        uptime,
+        slots,
+      };
+    });
 
     return {
-      ...site,
-      status: latest?.status ?? 'unknown',
-      responseTime: latest?.status !== 'offline' ? (latest?.response_time ?? null) : null,
-      uptime,
-      slots,
+      websites: websiteStats,
+      incidents: (incidents ?? []) as Incident[],
+      lastUpdated: new Date().toISOString(),
     };
-  });
-
-  return {
-    websites: websiteStats,
-    incidents: (incidents ?? []) as Incident[],
-    lastUpdated: new Date().toISOString(),
-  };
+  } catch (error) {
+    // Fix: kalau Supabase gagal, return empty state daripada crash
+    console.error('[WebWatch] fetchStatusData error:', error);
+    return {
+      websites: [] as WebsiteStat[],
+      incidents: [] as Incident[],
+      lastUpdated: new Date().toISOString(),
+    };
+  }
 }
 
 export default function StatusClient() {
@@ -142,7 +153,6 @@ export default function StatusClient() {
   useEffect(() => {
     loadData();
 
-    // Realtime subscription — auto update saat ada log baru
     const channel = supabase
       .channel('status-page-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {

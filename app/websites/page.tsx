@@ -1,4 +1,3 @@
-// PATH: app/websites/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -94,9 +93,13 @@ export default function WebsitesPage() {
     }
   }, []);
 
+  // Fix: gunakan flag `hasWebsites` dan eslint-disable-next-line yang spesifik
+  // supaya hanya trigger saat websites pertama kali load, bukan setiap render
+  const hasWebsites = websites.length > 0;
   useEffect(() => {
-    if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
-  }, [websites.length]); // eslint-disable-line
+    if (hasWebsites) websites.forEach((w) => checkWebsite(w));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasWebsites]); // intentional: hanya trigger saat transisi 0 → ada website
 
   const checkAll = () => websites.forEach((w) => checkWebsite(w));
 
@@ -200,7 +203,6 @@ export default function WebsitesPage() {
               return (
                 <motion.div key={website.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}
                   className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 hover:border-white/10 transition-all">
-                  {/* Top row: icon + name + status + actions */}
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${s?.status === 'Online' ? 'bg-emerald-500/10 text-emerald-500' : s?.status === 'Offline' ? 'bg-rose-500/10 text-rose-500' : 'bg-zinc-800 text-zinc-400'}`}>
                       <Globe className="w-4 h-4" />
@@ -225,9 +227,7 @@ export default function WebsitesPage() {
                     </div>
                   </div>
 
-                  {/* Bottom row: stats */}
                   <div className="mt-3 flex items-center gap-3 flex-wrap">
-                    {/* Status */}
                     <div className="flex items-center gap-1.5">
                       <div className={`w-1.5 h-1.5 rounded-full ${getStatusBg(s?.status)} ${s?.status === 'Online' ? 'animate-pulse' : ''}`} />
                       <span className={`text-xs font-bold flex items-center gap-1 ${getStatusColor(s?.status)}`}>
@@ -236,13 +236,11 @@ export default function WebsitesPage() {
                       </span>
                     </div>
 
-                    {/* Response time */}
                     <div className="flex items-center gap-1 text-zinc-500">
                       <Clock className="w-3 h-3" />
                       <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
                     </div>
 
-                    {/* Uptime */}
                     <div className="flex items-center gap-2 flex-1 min-w-[100px]">
                       <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
                         <div
@@ -258,7 +256,6 @@ export default function WebsitesPage() {
                       )}
                     </div>
 
-                    {/* SSL */}
                     <div className="flex items-center gap-1">
                       {!s ? <Shield className="w-3.5 h-3.5 text-zinc-600" />
                         : s.isSSL && s.sslValid ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />

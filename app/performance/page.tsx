@@ -1,4 +1,3 @@
-// PATH: app/performance/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -56,16 +55,10 @@ export default function PerformancePage() {
       setLoadingWebsites(true);
       const { data, error } = await supabase.from('websites').select('*').order('created_at', { ascending: true });
       if (cancelled) return;
-      if (!error && data && data.length > 0) {
-        const sites: WebsitePerf[] = data.map((w: Website) => ({ ...w, scores: null, loading: true, error: false, checkedAt: null }));
-        setWebsites(sites);
-        setLoadingWebsites(false);
-        for (const site of sites) {
-          if (cancelled) break;
-          await checkPerformance(site, 'desktop');
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      } else {
+
+      // Fix: pisahkan antara "error" vs "data kosong"
+      if (error) {
+        // Supabase error → fallback ke localStorage
         const saved = localStorage.getItem('cloudwatch_websites');
         if (saved) {
           const parsed: Website[] = JSON.parse(saved);
@@ -77,7 +70,19 @@ export default function PerformancePage() {
             await checkPerformance(site, 'desktop');
             await new Promise((r) => setTimeout(r, 1000));
           }
-        } else { setLoadingWebsites(false); }
+        } else {
+          setLoadingWebsites(false);
+        }
+      } else {
+        // Supabase OK (meski data kosong) → pakai data Supabase
+        const sites: WebsitePerf[] = (data ?? []).map((w: Website) => ({ ...w, scores: null, loading: true, error: false, checkedAt: null }));
+        setWebsites(sites);
+        setLoadingWebsites(false);
+        for (const site of sites) {
+          if (cancelled) break;
+          await checkPerformance(site, 'desktop');
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
     };
     loadAndAnalyze();
@@ -119,7 +124,6 @@ export default function PerformancePage() {
         <Header onMenuClick={() => setSidebarOpen(true)} />
 
         <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-6">
-          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h1 className="text-xl lg:text-2xl font-bold text-white flex items-center gap-2">
@@ -129,7 +133,6 @@ export default function PerformancePage() {
               <p className="text-zinc-500 text-xs lg:text-sm mt-0.5">Lighthouse score — auto analyze saat halaman dibuka</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* Device toggle */}
               <div className="flex items-center bg-zinc-900 border border-white/5 rounded-xl p-1">
                 <button onClick={() => handleDeviceSwitch('desktop')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${device === 'desktop' ? 'bg-emerald-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
@@ -150,7 +153,6 @@ export default function PerformancePage() {
             </div>
           </div>
 
-          {/* Avg scores */}
           {avgScores && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {avgScores.map((m) => (

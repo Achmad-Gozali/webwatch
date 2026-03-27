@@ -40,7 +40,9 @@ export async function GET(request: Request) {
         else status = 'degraded';
       } catch {
         status = 'offline';
-        responseTime = 0;
+        // Fix: tetap catat actual elapsed time, bukan 0
+        // Ini lebih akurat untuk analitik — bisa tahu apakah timeout atau cepat gagal
+        responseTime = Date.now() - start;
       }
 
       // Simpan ke monitor_logs
@@ -86,7 +88,7 @@ export async function GET(request: Request) {
           }
         }
       } else if (status === 'online') {
-        // Fix: slow response check di luar blok offline/degraded
+        // Slow response check di luar blok offline/degraded
         if (responseTime > 3000 && prevStatus === 'online') {
           await sendTelegram(alertSlowResponse(site.name, site.url, responseTime));
         }

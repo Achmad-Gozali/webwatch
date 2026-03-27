@@ -4,6 +4,11 @@ import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import { sendTelegram } from '@/lib/telegram';
 
+// Fix: tambah guard seperti di monitor/route.ts
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('[WebWatch] SUPABASE_SERVICE_ROLE_KEY tidak ditemukan.');
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -18,7 +23,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Ambil semua website
     const { data: websites } = await supabase
       .from('websites')
       .select('id, name, url');
@@ -27,7 +31,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No websites' });
     }
 
-    // Ambil logs 7 hari terakhir
     const since = new Date();
     since.setDate(since.getDate() - 7);
 
@@ -37,14 +40,12 @@ export async function GET(request: Request) {
       .in('website_id', websites.map((w) => w.id))
       .gte('checked_at', since.toISOString());
 
-    // Ambil incidents 7 hari terakhir
     const { data: incidents } = await supabase
       .from('incidents')
       .select('website_id, started_at, resolved_at, duration_minutes, status')
       .in('website_id', websites.map((w) => w.id))
       .gte('started_at', since.toISOString());
 
-    // Hitung stats per website
     const websiteStats = websites.map((site) => {
       const siteLogs = (logs ?? []).filter((l) => l.website_id === site.id);
       const siteIncidents = (incidents ?? []).filter((i) => i.website_id === site.id);
@@ -71,12 +72,10 @@ export async function GET(request: Request) {
       };
     });
 
-    // Buat context untuk AI
     const statsText = websiteStats
       .map((s) => `- ${s.name}: uptime ${s.uptime}%${s.avgResponse ? `, avg response ${s.avgResponse}ms` : ''}${s.totalIncidents > 0 ? `, ${s.totalIncidents} incident (${s.totalDowntime} menit downtime)` : ', no incidents'}`)
       .join('\n');
 
-    // Generate AI summary
     const completion = await groq.chat.completions.create({
       messages: [
         {
@@ -112,7 +111,6 @@ Maksimal 200 kata. Langsung ke isi, tanpa salam.`,
 
     const summary = completion.choices[0]?.message?.content ?? 'Gagal generate summary.';
 
-    // Kirim ke Telegram
     const message = `🗓 *WebWatch Weekly Summary*\n\n${summary}`;
     await sendTelegram(message);
 

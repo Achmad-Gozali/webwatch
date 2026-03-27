@@ -1,9 +1,10 @@
-// PATH: components/LandingClient.tsx
 "use client";
 
+// PATH: components/LandingClient.tsx
 import { useState, useEffect, useRef } from "react";
 import { motion, useInView } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Globe,
   Activity,
@@ -133,6 +134,7 @@ function StatusColor(status: string) {
 }
 
 export default function LandingClient({ data }: { data: LandingData }) {
+  const router = useRouter();
   const featuresRef = useRef(null);
   const websitesRef = useRef(null);
   const featuresInView = useInView(featuresRef, {
@@ -144,13 +146,12 @@ export default function LandingClient({ data }: { data: LandingData }) {
     margin: "-100px",
   });
 
-  // Auto-refresh data tiap 60 detik
+  // Fix: pakai router.refresh() — soft refresh tanpa reset scroll/state
+  // window.location.reload() menyebabkan UX buruk karena hard reload penuh
   useEffect(() => {
-    const interval = setInterval(() => {
-      window.location.reload();
-    }, 60000);
+    const interval = setInterval(() => router.refresh(), 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [router]);
 
   const allOnline = data.websites.every(
     (w) => w.status === "online" || w.status === "unknown",
@@ -225,7 +226,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
 
       {/* Hero */}
       <section className="relative z-10 mx-auto max-w-5xl px-4 pt-16 pb-12 text-center sm:px-6 lg:px-8 lg:pt-24 lg:pb-20">
-        {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -236,7 +236,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
           {data.stats.online} dari {data.stats.total} website aktif dipantau
         </motion.div>
 
-        {/* Headline */}
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -249,7 +248,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
           </span>
         </motion.h1>
 
-        {/* Subtext */}
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -261,7 +259,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
           bermasalah.
         </motion.p>
 
-        {/* CTAs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -436,7 +433,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
           transition={{ delay: 0.3 }}
           className="overflow-hidden rounded-3xl border border-white/5 bg-zinc-900/40"
         >
-          {/* Table header */}
           <div className="hidden grid-cols-12 gap-4 border-b border-white/5 px-6 py-3 text-[10px] font-bold tracking-wider text-zinc-600 uppercase sm:grid">
             <div className="col-span-5">Website</div>
             <div className="col-span-2">Status</div>
@@ -452,7 +448,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
               transition={{ delay: 0.3 + i * 0.05 }}
               className="grid grid-cols-1 gap-2 border-b border-white/5 px-6 py-4 transition-colors last:border-0 hover:bg-white/[0.02] sm:grid-cols-12 sm:gap-4"
             >
-              {/* Name */}
               <div className="flex min-w-0 items-center gap-3 sm:col-span-5">
                 <div
                   className={`h-2 w-2 shrink-0 rounded-full ${website.status === "online" ? "animate-pulse bg-emerald-500" : website.status === "offline" ? "bg-rose-500" : website.status === "degraded" ? "bg-amber-500" : "bg-zinc-600"}`}
@@ -466,7 +461,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
                   </p>
                 </div>
               </div>
-              {/* Status */}
               <div className="flex items-center gap-1.5 sm:col-span-2">
                 <StatusIcon status={website.status} />
                 <span
@@ -475,7 +469,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
                   {website.status === "unknown" ? "—" : website.status}
                 </span>
               </div>
-              {/* Response */}
               <div className="flex items-center gap-1.5 text-zinc-500 sm:col-span-2">
                 <Clock className="h-3 w-3" />
                 <span className="font-mono text-xs">
@@ -484,7 +477,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
                     : "—"}
                 </span>
               </div>
-              {/* Uptime */}
               <div className="flex items-center gap-2 sm:col-span-3">
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
                   <div
@@ -501,7 +493,6 @@ export default function LandingClient({ data }: { data: LandingData }) {
             </motion.div>
           ))}
 
-          {/* Footer */}
           <div className="flex items-center justify-between px-6 py-4">
             <p className="text-xs text-zinc-600">
               {data.websites.length} website dipantau
@@ -559,30 +550,10 @@ export default function LandingClient({ data }: { data: LandingData }) {
       <footer className="relative z-10 border-t border-white/5 px-4 py-6 sm:px-6 lg:px-12">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
           <div className="flex items-center gap-5 text-xs text-zinc-600">
-            <Link
-              href="/dashboard"
-              className="transition-colors hover:text-zinc-400"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/status"
-              className="transition-colors hover:text-zinc-400"
-            >
-              Status
-            </Link>
-            <Link
-              href="/monitoring"
-              className="transition-colors hover:text-zinc-400"
-            >
-              Monitoring
-            </Link>
-            <Link
-              href="/help"
-              className="transition-colors hover:text-zinc-400"
-            >
-              Help
-            </Link>
+            <Link href="/dashboard" className="transition-colors hover:text-zinc-400">Dashboard</Link>
+            <Link href="/status" className="transition-colors hover:text-zinc-400">Status</Link>
+            <Link href="/monitoring" className="transition-colors hover:text-zinc-400">Monitoring</Link>
+            <Link href="/help" className="transition-colors hover:text-zinc-400">Help</Link>
           </div>
           <p className="text-xs text-zinc-700">
             © 2026 WebWatch. All rights reserved.

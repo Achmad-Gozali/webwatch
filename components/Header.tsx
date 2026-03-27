@@ -99,6 +99,9 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
   const [mounted, setMounted] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
   const prevStatusesRef = useRef<Record<string, string>>({});
+  // Fix: tambah cooldown ref per site untuk slow response notification
+  // supaya tidak spam notif yang sama setiap 15 detik
+  const lastSlowNotifRef = useRef<Record<string, number>>({});
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -132,24 +135,33 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const sites = JSON.parse(raw);
+      const now = Date.now();
+
       sites.forEach((site: { id: string; name: string; status?: string; responseTime?: number }) => {
         const curr = site.status;
         const prev = prevStatusesRef.current[site.id];
         if (!curr || curr === 'checking...') return;
         const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
         if (prev && prev !== curr) {
           if (curr === 'offline') addNotification({ text: `${site.name} tidak dapat diakses`, time, type: 'error' });
           else if (curr === 'online' && prev === 'offline') addNotification({ text: `${site.name} kembali online`, time, type: 'success' });
           else if (curr === 'degraded') addNotification({ text: `${site.name} mengalami gangguan`, time, type: 'warning' });
         }
+
+        // Fix: tambah cooldown 5 menit per site supaya slow response tidak spam
         if (curr === 'online' && site.responseTime && site.responseTime > 800 && prev === curr) {
-          addNotification({ text: `${site.name} response time lambat (${site.responseTime}ms)`, time, type: 'warning' });
+          const lastNotif = lastSlowNotifRef.current[site.id] ?? 0;
+          if (now - lastNotif > 5 * 60 * 1000) {
+            addNotification({ text: `${site.name} response time lambat (${site.responseTime}ms)`, time, type: 'warning' });
+            lastSlowNotifRef.current[site.id] = now;
+          }
         }
+
         prevStatusesRef.current[site.id] = curr;
       });
     };
 
-    // Fix: naikkan interval dari 3s ke 15s — kurangi pembacaan & parsing localStorage
     const interval = setInterval(checkStatuses, 15000);
     checkStatuses();
     return () => clearInterval(interval);

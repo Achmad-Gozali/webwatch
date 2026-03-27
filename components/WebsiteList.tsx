@@ -1,4 +1,3 @@
-// PATH: components/WebsiteList.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
@@ -80,9 +79,13 @@ function WebsiteListContent() {
     }
   }, []);
 
+  // Fix: gunakan flag `hasWebsites` supaya hanya trigger saat transisi 0 → ada website
+  // bukan setiap render, dan tanpa menekan semua eslint rules
+  const hasWebsites = websites.length > 0;
   useEffect(() => {
-    if (websites.length > 0) websites.forEach((w) => checkWebsite(w));
-  }, [websites.length]); // eslint-disable-line
+    if (hasWebsites) websites.forEach((w) => checkWebsite(w));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasWebsites]); // intentional: hanya trigger saat websites pertama kali load
 
   const checkAll = () => { websites.forEach((w) => checkWebsite(w)); loadUptimes(websites); };
 
@@ -114,7 +117,7 @@ function WebsiteListContent() {
           Websites
           {searchQuery && (
             <span className="ml-2 text-sm font-normal text-zinc-500">
-              "<span className="text-emerald-400">{searchQuery}</span>"
+              &quot;<span className="text-emerald-400">{searchQuery}</span>&quot;
             </span>
           )}
         </h2>
@@ -162,7 +165,7 @@ function WebsiteListContent() {
           <motion.div key="empty-search" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex flex-col items-center justify-center py-12 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
             <Globe className="w-8 h-8 text-zinc-700 mb-3" />
-            <p className="text-zinc-400 text-sm text-center px-4">Tidak ada hasil untuk "<span className="text-emerald-400">{searchQuery}</span>"</p>
+            <p className="text-zinc-400 text-sm text-center px-4">Tidak ada hasil untuk &quot;<span className="text-emerald-400">{searchQuery}</span>&quot;</p>
             <button onClick={() => router.push('/')} className="mt-3 text-xs text-zinc-500 hover:text-white font-bold uppercase tracking-widest">Reset</button>
           </motion.div>
         ) : filterStatus !== 'all' ? (
@@ -217,13 +220,11 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
         s?.status === 'Offline' ? 'hover:border-rose-500/30' : 'hover:border-white/10'
       }`}
     >
-      {/* Row utama */}
       <div className="flex items-center gap-3">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
           <Globe className="w-4 h-4" />
         </div>
 
-        {/* Nama & URL */}
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-bold text-white truncate group-hover:text-emerald-400 transition-colors">
             <HighlightText text={website.name} query={searchQuery ?? ''} />
@@ -233,7 +234,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
           </p>
         </div>
 
-        {/* Status badge */}
         <div className="flex items-center gap-1.5 shrink-0">
           <div className={`w-1.5 h-1.5 rounded-full ${statusBg} ${s?.status === 'Online' ? 'animate-pulse' : ''}`} />
           <span className={`text-xs font-bold ${statusColor}`}>
@@ -242,15 +242,12 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
         </div>
       </div>
 
-      {/* Stats row */}
       <div className="mt-3 flex items-center gap-4">
-        {/* Response time */}
         <div className="flex items-center gap-1.5 text-zinc-500">
           <Clock className="w-3 h-3" />
           <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
         </div>
 
-        {/* Uptime bar */}
         <div className="flex-1 flex items-center gap-2">
           <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
             <div
@@ -263,7 +260,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
           </span>
         </div>
 
-        {/* SSL */}
         <div className="shrink-0">
           {!s ? <Shield className="w-3.5 h-3.5 text-zinc-600" />
             : s.isSSL && s.sslValid ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
