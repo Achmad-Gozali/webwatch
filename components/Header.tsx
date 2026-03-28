@@ -3,15 +3,15 @@
 // PATH: components/Header.tsx
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Bell, Menu, ChevronRight, X, CheckCircle, XCircle, AlertCircle, Globe } from 'lucide-react';
+import { Search, Bell, Menu, ChevronRight, X, CheckCircle, XCircle, AlertCircle, Globe, LogIn, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
+import { useAuth } from '@/hooks/use-auth';
 
 interface HeaderProps { onMenuClick: () => void; }
 interface Notification { id: string; text: string; time: string; type: 'success' | 'error' | 'warning' | 'info'; }
 
 const NOTIF_KEY = 'webwatch_notifications';
-const PROFILE_KEY = 'webwatch_profile';
 const STORAGE_KEY = 'cloudwatch_websites';
 
 function NotifDropdown({ notifications, onClear, onClose, bellRef }: {
@@ -48,7 +48,7 @@ function NotifDropdown({ notifications, onClear, onClose, bellRef }: {
         className="w-80 max-w-[calc(100vw-1rem)] bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[999]"
       >
         <div className="p-4 border-b border-white/5 flex justify-between items-center">
-          <h4 className="text-sm font-bold text-white">Notifications</h4>
+          <h4 className="text-sm font-bold text-white">Notifikasi</h4>
           <div className="flex items-center gap-2">
             {notifications.length > 0 && (
               <>
@@ -90,31 +90,18 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentStatus = searchParams.get('status') ?? 'all';
+  const { isAdmin, signOut } = useAuth();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
-  const [profileName, setProfileName] = useState('');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [mounted, setMounted] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
   const prevStatusesRef = useRef<Record<string, string>>({});
-  // Fix: tambah cooldown ref per site untuk slow response notification
-  // supaya tidak spam notif yang sama setiap 15 detik
   const lastSlowNotifRef = useRef<Record<string, number>>({});
 
   useEffect(() => { setMounted(true); }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(PROFILE_KEY);
-    if (saved) setProfileName(JSON.parse(saved).name || '');
-    const handleProfile = () => {
-      const s = localStorage.getItem(PROFILE_KEY);
-      if (s) setProfileName(JSON.parse(s).name || '');
-    };
-    window.addEventListener('webwatch-profile-updated', handleProfile);
-    return () => window.removeEventListener('webwatch-profile-updated', handleProfile);
-  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(NOTIF_KEY);
@@ -145,15 +132,14 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
 
         if (prev && prev !== curr) {
           if (curr === 'offline') addNotification({ text: `${site.name} tidak dapat diakses`, time, type: 'error' });
-          else if (curr === 'online' && prev === 'offline') addNotification({ text: `${site.name} kembali online`, time, type: 'success' });
+          else if (curr === 'online' && prev === 'offline') addNotification({ text: `${site.name} kembali aktif`, time, type: 'success' });
           else if (curr === 'degraded') addNotification({ text: `${site.name} mengalami gangguan`, time, type: 'warning' });
         }
 
-        // Fix: tambah cooldown 5 menit per site supaya slow response tidak spam
         if (curr === 'online' && site.responseTime && site.responseTime > 800 && prev === curr) {
           const lastNotif = lastSlowNotifRef.current[site.id] ?? 0;
           if (now - lastNotif > 5 * 60 * 1000) {
-            addNotification({ text: `${site.name} response time lambat (${site.responseTime}ms)`, time, type: 'warning' });
+            addNotification({ text: `${site.name} waktu respons lambat (${site.responseTime}ms)`, time, type: 'warning' });
             lastSlowNotifRef.current[site.id] = now;
           }
         }
@@ -172,10 +158,6 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
     localStorage.removeItem(NOTIF_KEY);
   };
 
-  const initials = profileName
-    ? profileName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-    : 'W';
-
   const handleSearch = (val: string) => {
     setSearchQuery(val);
     const params = new URLSearchParams(searchParams.toString());
@@ -184,10 +166,13 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
   };
 
   const routeLabels: Record<string, string> = {
-    'cloud-services': 'Performance',
     'performance': 'Performance',
     'dashboard': 'Overview',
     'help': 'Help',
+    'monitoring': 'Monitoring',
+    'websites': 'Websites',
+    'security': 'Security',
+    'incidents': 'Incidents',
   };
 
   const getBreadcrumbs = () => {
@@ -241,7 +226,7 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
             <AnimatePresence>
               {isSearchOpen && (
                 <motion.input initial={{ width: 0, opacity: 0 }} animate={{ width: 160, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                  type="text" placeholder="Search..." value={searchQuery} onChange={(e) => handleSearch(e.target.value)}
+                  type="text" placeholder="Cari..." value={searchQuery} onChange={(e) => handleSearch(e.target.value)}
                   className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 mr-2" autoFocus />
               )}
             </AnimatePresence>
@@ -278,10 +263,28 @@ function HeaderContent({ onMenuClick }: HeaderProps) {
 
           <div className="h-6 w-px bg-white/5" />
 
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-emerald-500/10">
-              {initials}
-            </div>
+          {/* Login/Logout button */}
+          {isAdmin ? (
+            <button
+              onClick={signOut}
+              title="Keluar"
+              className="p-2.5 bg-zinc-900 border border-white/5 rounded-xl text-zinc-400 hover:text-rose-400 hover:border-rose-500/20 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => router.push('/login')}
+              title="Masuk sebagai admin"
+              className="p-2.5 bg-zinc-900 border border-white/5 rounded-xl text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/20 transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Avatar — hijau kalau admin, abu kalau bukan */}
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-lg ${isAdmin ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/10' : 'bg-zinc-800 shadow-none'}`}>
+            {isAdmin ? 'A' : 'W'}
           </div>
         </div>
       </div>

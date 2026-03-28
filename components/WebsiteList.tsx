@@ -19,6 +19,15 @@ interface WebsiteStatus {
   checkedAt: string;
 }
 
+// Label tampilan dalam Bahasa Indonesia — nilai data tetap English untuk logic
+function getStatusLabel(status?: string) {
+  if (!status || status === 'Checking...') return 'Memeriksa...';
+  if (status === 'Online') return 'Aktif';
+  if (status === 'Degraded') return 'Terganggu';
+  if (status === 'Offline') return 'Tidak Aktif';
+  return '—';
+}
+
 const STORAGE_KEY = 'cloudwatch_websites';
 
 function WebsiteListContent() {
@@ -44,7 +53,7 @@ function WebsiteListContent() {
       const res = await fetch(`/api/uptime?websiteIds=${ids}&days=30`);
       const data = await res.json();
       if (data.uptimes) setUptimes(data.uptimes);
-    } catch { console.error('Gagal load uptime'); }
+    } catch { console.error('Gagal memuat uptime'); }
   }, []);
 
   useEffect(() => {
@@ -79,13 +88,11 @@ function WebsiteListContent() {
     }
   }, []);
 
-  // Fix: gunakan flag `hasWebsites` supaya hanya trigger saat transisi 0 → ada website
-  // bukan setiap render, dan tanpa menekan semua eslint rules
   const hasWebsites = websites.length > 0;
   useEffect(() => {
     if (hasWebsites) websites.forEach((w) => checkWebsite(w));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasWebsites]); // intentional: hanya trigger saat websites pertama kali load
+  }, [hasWebsites]);
 
   const checkAll = () => { websites.forEach((w) => checkWebsite(w)); loadUptimes(websites); };
 
@@ -114,7 +121,7 @@ function WebsiteListContent() {
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1">
         <h2 className="text-lg lg:text-xl font-bold text-white">
-          Websites
+          Website
           {searchQuery && (
             <span className="ml-2 text-sm font-normal text-zinc-500">
               &quot;<span className="text-emerald-400">{searchQuery}</span>&quot;
@@ -125,7 +132,7 @@ function WebsiteListContent() {
           <button onClick={checkAll} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-all">
             <RefreshCw className="w-4 h-4" />
           </button>
-          <span className="text-xs text-zinc-500 font-mono">{onlineCount}/{websites.length} Online</span>
+          <span className="text-xs text-zinc-500 font-mono">{onlineCount}/{websites.length} Aktif</span>
           <button onClick={() => router.push('/websites')}
             className="text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest flex items-center gap-1">
             Semua <ArrowUpRight className="w-3 h-3" />
@@ -138,13 +145,13 @@ function WebsiteListContent() {
           <motion.div key="all-good" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="flex flex-col items-center justify-center py-12 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
             <CheckCircle className="w-8 h-8 text-emerald-500 mb-3" />
-            <p className="text-white font-bold">All Systems Operational</p>
-            <p className="text-zinc-400 text-sm mt-1 text-center px-4">Semua website online dan berjalan normal.</p>
+            <p className="text-white font-bold">Semua Sistem Berjalan Normal</p>
+            <p className="text-zinc-400 text-sm mt-1 text-center px-4">Seluruh website aktif dan berjalan dengan baik.</p>
           </motion.div>
         ) : isStillChecking && !searchQuery ? (
           <motion.div key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-12">
             <RefreshCw className="w-6 h-6 text-zinc-600 animate-spin mb-3" />
-            <p className="text-zinc-500 text-sm">Sedang mengecek status website...</p>
+            <p className="text-zinc-500 text-sm">Sedang memeriksa status website...</p>
           </motion.div>
         ) : filteredWebsites.length > 0 ? (
           <motion.div key={`list-${filterStatus}-${searchQuery}`} className="grid grid-cols-1 gap-3">
@@ -224,7 +231,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
           <Globe className="w-4 h-4" />
         </div>
-
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-bold text-white truncate group-hover:text-emerald-400 transition-colors">
             <HighlightText text={website.name} query={searchQuery ?? ''} />
@@ -233,11 +239,10 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
             <HighlightText text={website.url} query={searchQuery ?? ''} />
           </p>
         </div>
-
         <div className="flex items-center gap-1.5 shrink-0">
           <div className={`w-1.5 h-1.5 rounded-full ${statusBg} ${s?.status === 'Online' ? 'animate-pulse' : ''}`} />
           <span className={`text-xs font-bold ${statusColor}`}>
-            {isChecking ? <Activity className="w-3 h-3 animate-pulse" /> : (s?.status ?? '—')}
+            {isChecking ? <Activity className="w-3 h-3 animate-pulse" /> : getStatusLabel(s?.status)}
           </span>
         </div>
       </div>
@@ -247,7 +252,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
           <Clock className="w-3 h-3" />
           <span className="text-xs font-mono">{isChecking ? '...' : s ? `${s.responseTime}ms` : '—'}</span>
         </div>
-
         <div className="flex-1 flex items-center gap-2">
           <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
             <div
@@ -259,7 +263,6 @@ function WebsiteRow({ website, status: s, uptime, isChecking, index, searchQuery
             {uptime !== null ? `${uptime}%` : '—'}
           </span>
         </div>
-
         <div className="shrink-0">
           {!s ? <Shield className="w-3.5 h-3.5 text-zinc-600" />
             : s.isSSL && s.sslValid ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />

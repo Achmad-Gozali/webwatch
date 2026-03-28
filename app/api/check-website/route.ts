@@ -6,7 +6,7 @@ const PRIVATE_IP_REGEX =
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
-
+  
   if (!url) {
     return NextResponse.json({ error: 'URL diperlukan' }, { status: 400 });
   }

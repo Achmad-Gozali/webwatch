@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@supabase/supabase-js';
 import {
-  CheckCircle, XCircle, AlertCircle, Globe, Clock,
+  CheckCircle, XCircle, AlertCircle, Clock,
   RefreshCw, Activity, Shield, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
@@ -61,6 +61,13 @@ function getUptimeColor(uptime: number) {
   return 'text-rose-400';
 }
 
+function getStatusLabel(status: string) {
+  if (status === 'online') return '● Aktif';
+  if (status === 'degraded') return '⚠ Terganggu';
+  if (status === 'offline') return '✕ Tidak Aktif';
+  return '— Tidak Diketahui';
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('id-ID', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -75,7 +82,6 @@ function formatDuration(minutes: number | null) {
   return m > 0 ? `${h}j ${m}m` : `${h} jam`;
 }
 
-// Fix: tambah try-catch supaya component tidak crash kalau Supabase query gagal
 async function fetchStatusData() {
   try {
     const [{ data: websites }, { data: incidents }, { data: logs }] = await Promise.all([
@@ -124,7 +130,6 @@ async function fetchStatusData() {
       lastUpdated: new Date().toISOString(),
     };
   } catch (error) {
-    // Fix: kalau Supabase gagal, return empty state daripada crash
     console.error('[WebWatch] fetchStatusData error:', error);
     return {
       websites: [] as WebsiteStat[],
@@ -152,17 +157,11 @@ export default function StatusClient() {
 
   useEffect(() => {
     loadData();
-
     const channel = supabase
       .channel('status-page-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => {
-        loadData();
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => loadData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => loadData())
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [loadData]);
 
@@ -185,10 +184,10 @@ export default function StatusClient() {
   const resolvedIncidents = data.incidents.filter((i) => i.status === 'resolved');
 
   const overallStatus = offlineCount > 0
-    ? { label: 'Partial Outage', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' }
+    ? { label: 'Sebagian Layanan Terganggu', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' }
     : degradedCount > 0
-    ? { label: 'Degraded Performance', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', dot: 'bg-amber-500' }
-    : { label: 'All Systems Operational', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
+    ? { label: 'Performa Menurun', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', dot: 'bg-amber-500' }
+    : { label: 'Semua Sistem Berjalan Normal', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -198,23 +197,16 @@ export default function StatusClient() {
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-              <Globe className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-bold text-white">WebWatch</span>
-          </div>
-
-          <h1 className="text-3xl lg:text-4xl font-bold text-white">Status Page</h1>
-          <p className="text-zinc-500 text-sm">Real-time monitoring status semua layanan</p>
+          <h1 className="text-3xl lg:text-4xl font-bold text-white">Halaman Status</h1>
+          <p className="text-zinc-500 text-sm">Pemantauan status semua layanan secara langsung</p>
 
           <div className="flex items-center justify-center gap-3 text-xs text-zinc-600">
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Live — update otomatis</span>
+              <span>Langsung — diperbarui otomatis</span>
             </div>
             <span>·</span>
-            <span>Last updated: {formatDate(data.lastUpdated)}</span>
+            <span>Diperbarui: {formatDate(data.lastUpdated)}</span>
             <button onClick={handleRefresh} disabled={isRefreshing}
               className="p-1 hover:text-zinc-400 transition-colors disabled:opacity-50">
               <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -229,7 +221,7 @@ export default function StatusClient() {
           <div className="flex-1">
             <p className={`text-lg font-bold ${overallStatus.color}`}>{overallStatus.label}</p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              {onlineCount} online · {degradedCount} degraded · {offlineCount} offline dari {data.websites.length} layanan
+              {onlineCount} aktif · {degradedCount} terganggu · {offlineCount} tidak aktif dari {data.websites.length} layanan
             </p>
           </div>
           {allOnline && <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0" />}
@@ -242,12 +234,12 @@ export default function StatusClient() {
               className="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-5 space-y-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                <h2 className="font-bold text-rose-400 text-sm uppercase tracking-widest">Active Incidents</h2>
+                <h2 className="font-bold text-rose-400 text-sm uppercase tracking-widest">Insiden Aktif</h2>
               </div>
               {ongoingIncidents.map((inc) => (
                 <div key={inc.id} className="pl-4 border-l-2 border-rose-500/40">
-                  <p className="font-bold text-white text-sm">{inc.websites?.name ?? 'Unknown'}</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">Incident dimulai {formatDate(inc.started_at)}</p>
+                  <p className="font-bold text-white text-sm">{inc.websites?.name ?? 'Tidak diketahui'}</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">Insiden dimulai {formatDate(inc.started_at)}</p>
                 </div>
               ))}
             </motion.div>
@@ -257,12 +249,12 @@ export default function StatusClient() {
         {/* Website list */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
           className="space-y-3">
-          <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">Services</h2>
+          <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1">Layanan</h2>
 
           {data.websites.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 bg-zinc-900/40 border border-white/5 rounded-2xl">
               <Activity className="w-8 h-8 text-zinc-700 mb-3" />
-              <p className="text-zinc-500 text-sm">Belum ada layanan yang dimonitor</p>
+              <p className="text-zinc-500 text-sm">Belum ada layanan yang dipantau</p>
             </div>
           ) : data.websites.map((website, index) => (
             <motion.div key={website.id}
@@ -273,10 +265,8 @@ export default function StatusClient() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-white text-sm">{website.name}</span>
-                    <span className={`text-xs font-bold capitalize ${getStatusColor(website.status)}`}>
-                      {website.status === 'online' ? '● Online'
-                        : website.status === 'degraded' ? '⚠ Degraded'
-                        : website.status === 'offline' ? '✕ Offline' : '— Unknown'}
+                    <span className={`text-xs font-bold ${getStatusColor(website.status)}`}>
+                      {getStatusLabel(website.status)}
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 font-mono truncate">{website.url}</p>
@@ -309,10 +299,10 @@ export default function StatusClient() {
         {/* Legend */}
         <div className="flex items-center justify-center gap-4 text-xs text-zinc-600">
           {[
-            { color: 'bg-emerald-500', label: 'Operational' },
-            { color: 'bg-amber-400', label: 'Degraded' },
-            { color: 'bg-rose-500', label: 'Outage' },
-            { color: 'bg-zinc-700', label: 'No data' },
+            { color: 'bg-emerald-500', label: 'Beroperasi' },
+            { color: 'bg-amber-400', label: 'Terganggu' },
+            { color: 'bg-rose-500', label: 'Gangguan' },
+            { color: 'bg-zinc-700', label: 'Tidak ada data' },
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-1.5">
               <div className={`w-2.5 h-2.5 rounded-sm ${item.color}`} />
@@ -327,9 +317,9 @@ export default function StatusClient() {
             className="space-y-3">
             <button onClick={() => setExpandedIncidents(!expandedIncidents)}
               className="w-full flex items-center justify-between px-1 group">
-              <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Incident History</h2>
+              <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Riwayat Insiden</h2>
               <div className="flex items-center gap-1 text-zinc-600 group-hover:text-zinc-400 transition-colors">
-                <span className="text-xs">{resolvedIncidents.length} incidents</span>
+                <span className="text-xs">{resolvedIncidents.length} insiden</span>
                 {expandedIncidents ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </div>
             </button>
@@ -351,7 +341,7 @@ export default function StatusClient() {
                           </div>
                         </div>
                         <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20 shrink-0">
-                          Resolved
+                          Teratasi
                         </span>
                       </div>
                     </motion.div>
@@ -366,9 +356,9 @@ export default function StatusClient() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
           className="grid grid-cols-3 gap-3">
           {[
-            { icon: <CheckCircle className="w-4 h-4 text-emerald-400" />, label: 'Online', value: onlineCount, color: 'text-emerald-400' },
-            { icon: <AlertCircle className="w-4 h-4 text-amber-400" />, label: 'Degraded', value: degradedCount, color: 'text-amber-400' },
-            { icon: <XCircle className="w-4 h-4 text-rose-400" />, label: 'Offline', value: offlineCount, color: 'text-rose-400' },
+            { icon: <CheckCircle className="w-4 h-4 text-emerald-400" />, label: 'Aktif', value: onlineCount, color: 'text-emerald-400' },
+            { icon: <AlertCircle className="w-4 h-4 text-amber-400" />, label: 'Terganggu', value: degradedCount, color: 'text-amber-400' },
+            { icon: <XCircle className="w-4 h-4 text-rose-400" />, label: 'Tidak Aktif', value: offlineCount, color: 'text-rose-400' },
           ].map((item) => (
             <div key={item.label} className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 text-center">
               <div className="flex justify-center mb-2">{item.icon}</div>
@@ -382,7 +372,7 @@ export default function StatusClient() {
         <div className="text-center space-y-2 pt-4 border-t border-white/5">
           <div className="flex items-center justify-center gap-2 text-zinc-600">
             <Shield className="w-3.5 h-3.5" />
-            <span className="text-xs">Powered by WebWatch</span>
+            <span className="text-xs">Dipersembahkan oleh WebWatch</span>
           </div>
         </div>
       </div>

@@ -1,4 +1,3 @@
-// PATH: app/dashboard/page.tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -16,28 +15,31 @@ function FilterBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentStatus = searchParams.get('status') ?? 'all';
-  const filters = ['All', 'Online', 'Offline'];
+  const filters = [
+    { label: 'Semua', value: 'all' },
+    { label: 'Aktif', value: 'online' },
+    { label: 'Tidak Aktif', value: 'offline' },
+  ];
 
-  const handleFilter = (f: string) => {
+  const handleFilter = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    const val = f.toLowerCase();
-    if (val === 'all') params.delete('status'); else params.set('status', val);
+    if (value === 'all') params.delete('status'); else params.set('status', value);
     router.push(`/dashboard?${params.toString()}`);
   };
 
-  const isActive = (f: string) => f === 'All' ? currentStatus === 'all' : currentStatus === f.toLowerCase();
+  const isActive = (value: string) => currentStatus === value;
 
   return (
     <div className="sm:hidden w-full overflow-x-auto scrollbar-none px-4 pb-2">
       <div className="flex items-center gap-2 w-max">
         {filters.map((f) => (
-          <button key={f} onClick={() => handleFilter(f)}
+          <button key={f.value} onClick={() => handleFilter(f.value)}
             className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
-              isActive(f)
+              isActive(f.value)
                 ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20'
                 : 'bg-zinc-900 text-zinc-400 border-white/5 hover:text-white'
             }`}>
-            {f}
+            {f.label}
           </button>
         ))}
       </div>

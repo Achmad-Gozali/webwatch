@@ -1,4 +1,3 @@
-// PATH: app/monitoring/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -7,7 +6,7 @@ import Header from '@/components/Header';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { Activity, RefreshCw, Globe, TrendingUp, TrendingDown, Minus, Play, Square } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface Website { id: string; name: string; url: string; }
 interface ResponseEntry { time: string; ms: number | null; }
@@ -148,15 +147,14 @@ export default function MonitoringPage() {
         <Header onMenuClick={() => setSidebarOpen(true)} />
 
         <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-6">
-          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h1 className="text-xl lg:text-2xl font-bold text-white flex items-center gap-2">
                 <Activity className="w-6 h-6 text-emerald-500" />
-                Response Time Monitor
+                Monitor Waktu Respons
               </h1>
               <p className="text-zinc-500 text-xs lg:text-sm mt-0.5">
-                History dari Supabase — update tiap 5 menit
+                Riwayat dari Supabase — diperbarui tiap 5 menit
                 {lastUpdated && <span className="ml-2 text-zinc-600">· {lastUpdated}</span>}
               </p>
             </div>
@@ -166,23 +164,22 @@ export default function MonitoringPage() {
                   isAutoRefresh ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-zinc-900 border-white/5 text-zinc-400 hover:text-white'
                 }`}>
                 {isAutoRefresh ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {isAutoRefresh ? 'Stop' : 'Auto 30s'}
+                {isAutoRefresh ? 'Berhenti' : 'Otomatis 30d'}
               </button>
               <button onClick={() => checkAll(websites)}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all text-sm shadow-lg shadow-emerald-500/20">
                 <RefreshCw className="w-4 h-4" />
-                Check
+                Periksa
               </button>
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { label: 'Websites', value: websites.length, color: 'text-white' },
-              { label: 'Online', value: websites.filter((w) => w.status === 'online').length, color: 'text-emerald-400' },
-              { label: 'Offline', value: websites.filter((w) => w.status === 'offline').length, color: 'text-rose-400' },
-              { label: 'Avg Response', value: avgResponseTime !== null ? `${avgResponseTime}ms` : '—', color: getStatusColor(avgResponseTime) },
+              { label: 'Website', value: websites.length, color: 'text-white' },
+              { label: 'Aktif', value: websites.filter((w) => w.status === 'online').length, color: 'text-emerald-400' },
+              { label: 'Tidak Aktif', value: websites.filter((w) => w.status === 'offline').length, color: 'text-rose-400' },
+              { label: 'Rata-rata Respons', value: avgResponseTime !== null ? `${avgResponseTime}ms` : '—', color: getStatusColor(avgResponseTime) },
             ].map((card, i) => (
               <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                 className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
@@ -199,13 +196,12 @@ export default function MonitoringPage() {
             </div>
           ) : (
             <>
-              {/* Chart semua website — hidden di mobile kalau < 2 data */}
               {chartData.length > 1 && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                   className="bg-zinc-900/40 border border-white/5 rounded-3xl p-4 lg:p-8">
                   <h2 className="text-base lg:text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-emerald-500" />
-                    Response Time History
+                    Riwayat Waktu Respons
                   </h2>
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={chartData}>
@@ -214,7 +210,6 @@ export default function MonitoringPage() {
                       <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickFormatter={(v) => `${v}ms`} width={45} />
                       <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 12 }}
                         labelStyle={{ color: '#a1a1aa' }} formatter={(value: unknown) => [`${value}ms`]} />
-                      <Legend />
                       {websites.map((w, i) => (
                         <Line key={w.id} type="monotone" dataKey={w.name} stroke={COLORS[i % COLORS.length]}
                           strokeWidth={2} dot={false} connectNulls={false} />
@@ -274,7 +269,7 @@ export default function MonitoringPage() {
                       <div className="flex items-center gap-0.5 mt-3">
                         {website.history.length > 0
                           ? website.history.slice(-10).map((h, i) => (
-                              <div key={i} title={h.ms !== null ? `${h.ms}ms` : 'Offline'}
+                              <div key={i} title={h.ms !== null ? `${h.ms}ms` : 'Tidak Aktif'}
                                 className={`flex-1 h-1.5 rounded-full ${getStatusBg(h.ms)}`} />
                             ))
                           : Array.from({ length: 10 }).map((_, i) => (

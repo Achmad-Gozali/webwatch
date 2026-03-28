@@ -10,11 +10,7 @@ import {
   AlertTriangle, CheckCircle, XCircle, Clock,
 } from 'lucide-react';
 
-interface Website {
-  id: string;
-  name: string;
-  url: string;
-}
+interface Website { id: string; name: string; url: string; }
 
 interface SSLInfo {
   valid: boolean;
@@ -55,7 +51,7 @@ const HEADER_DESC: Record<keyof HeadersInfo, string> = {
   'x-frame-options': 'Cegah clickjacking',
   'x-content-type-options': 'Cegah MIME sniffing',
   'referrer-policy': 'Kontrol referrer info',
-  'permissions-policy': 'Batasi browser features',
+  'permissions-policy': 'Batasi fitur browser',
 };
 
 function getSSLColor(daysLeft: number | null) {
@@ -96,9 +92,9 @@ function getScoreBadgeStyle(score: number): React.CSSProperties {
 }
 
 function getScoreLabel(score: number) {
-  if (score >= 80) return 'Secure';
-  if (score >= 50) return 'Moderate';
-  return 'At Risk';
+  if (score >= 80) return 'Aman';
+  if (score >= 50) return 'Sedang';
+  return 'Berisiko';
 }
 
 export default function SecurityPage() {
@@ -138,26 +134,15 @@ export default function SecurityPage() {
 
   useEffect(() => {
     let cancelled = false;
-
     const loadAndCheck = async () => {
       setLoadingWebsites(true);
-
-      const { data, error } = await supabase
-        .from('websites')
-        .select('*')
-        .order('created_at', { ascending: true });
-
+      const { data, error } = await supabase.from('websites').select('*').order('created_at', { ascending: true });
       if (cancelled) return;
-
-      // Fix: pisahkan antara "error" vs "data kosong"
       if (error) {
-        // Supabase error → fallback ke localStorage
         const saved = localStorage.getItem('cloudwatch_websites');
         if (saved) {
           const parsed: Website[] = JSON.parse(saved);
-          const sites: WebsiteSecurity[] = parsed.map((w) => ({
-            ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null,
-          }));
+          const sites: WebsiteSecurity[] = parsed.map((w) => ({ ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null }));
           setWebsites(sites);
           setLoadingWebsites(false);
           for (const site of sites) {
@@ -165,14 +150,9 @@ export default function SecurityPage() {
             await checkSecurity(site);
             await new Promise((r) => setTimeout(r, 500));
           }
-        } else {
-          setLoadingWebsites(false);
-        }
+        } else { setLoadingWebsites(false); }
       } else {
-        // Supabase OK (meski data kosong) → pakai data Supabase
-        const sites: WebsiteSecurity[] = (data ?? []).map((w: Website) => ({
-          ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null,
-        }));
+        const sites: WebsiteSecurity[] = (data ?? []).map((w: Website) => ({ ...w, ssl: null, headers: null, loading: true, error: false, checkedAt: null }));
         setWebsites(sites);
         setLoadingWebsites(false);
         for (const site of sites) {
@@ -182,20 +162,16 @@ export default function SecurityPage() {
         }
       }
     };
-
     loadAndCheck();
     return () => { cancelled = true; };
   }, [checkSecurity]);
 
   const checkAll = useCallback(() => {
-    websites.forEach((w, i) => {
-      setTimeout(() => checkSecurity(w), i * 500);
-    });
+    websites.forEach((w, i) => setTimeout(() => checkSecurity(w), i * 500));
   }, [websites, checkSecurity]);
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white">
-      {/* Fix: tambah onClose prop yang sebelumnya missing */}
       <Sidebar
         className={`fixed lg:sticky lg:flex z-50 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         onClose={() => setSidebarOpen(false)}
@@ -209,13 +185,13 @@ export default function SecurityPage() {
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                 <ShieldCheck className="w-7 h-7 text-emerald-500" />
-                Security Overview
+                Ikhtisar Keamanan
               </h1>
-              <p className="text-zinc-500 text-sm">SSL certificate & HTTP security headers — auto check saat halaman dibuka</p>
+              <p className="text-zinc-500 text-sm">Sertifikat SSL & header keamanan HTTP — diperiksa otomatis saat halaman dibuka</p>
             </div>
             <button onClick={checkAll}
               className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20">
-              <RefreshCw className="w-4 h-4" /> Check All
+              <RefreshCw className="w-4 h-4" /> Periksa Semua
             </button>
           </div>
 
@@ -227,7 +203,7 @@ export default function SecurityPage() {
                 <Globe className="w-10 h-10 text-zinc-700 mb-4" />
                 <p className="text-zinc-500 font-medium">Belum ada website</p>
                 <a href="/websites" className="mt-4 text-xs text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-widest">
-                  + Tambah Website dulu
+                  + Tambah Website terlebih dahulu
                 </a>
               </div>
             ) : websites.map((website, index) => {
@@ -244,10 +220,7 @@ export default function SecurityPage() {
                         <div className="flex items-center gap-3">
                           <h3 className="text-lg font-bold text-white">{website.name}</h3>
                           {score !== null && (
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded-full ${getScoreColor(score)}`}
-                              style={getScoreBadgeStyle(score)}
-                            >
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getScoreColor(score)}`} style={getScoreBadgeStyle(score)}>
                               {getScoreLabel(score)} · {score}/100
                             </span>
                           )}
@@ -258,7 +231,7 @@ export default function SecurityPage() {
                     <button onClick={() => checkSecurity(website)} disabled={website.loading}
                       className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50">
                       <RefreshCw className={`w-3.5 h-3.5 ${website.loading ? 'animate-spin' : ''}`} />
-                      {website.loading ? 'Checking...' : 'Check'}
+                      {website.loading ? 'Memeriksa...' : 'Periksa'}
                     </button>
                   </div>
 
@@ -269,7 +242,7 @@ export default function SecurityPage() {
                   ) : website.error ? (
                     <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
                       <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
-                      <p className="text-sm font-bold text-rose-400">Gagal mengecek. Coba lagi.</p>
+                      <p className="text-sm font-bold text-rose-400">Gagal memeriksa. Coba lagi.</p>
                     </div>
                   ) : website.ssl || website.headers ? (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -277,49 +250,45 @@ export default function SecurityPage() {
                       <div className="bg-zinc-800/40 rounded-2xl p-5">
                         <div className="flex items-center gap-2 mb-4">
                           <Lock className="w-4 h-4 text-zinc-400" />
-                          <h4 className="font-bold text-white text-sm uppercase tracking-wider">SSL Certificate</h4>
+                          <h4 className="font-bold text-white text-sm uppercase tracking-wider">Sertifikat SSL</h4>
                         </div>
                         {website.ssl ? (
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-zinc-500">Status</span>
                               <div className="flex items-center gap-1.5">
-                                {website.ssl.valid
-                                  ? <CheckCircle className="w-4 h-4 text-emerald-400" />
-                                  : <XCircle className="w-4 h-4 text-rose-400" />}
+                                {website.ssl.valid ? <CheckCircle className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400" />}
                                 <span className={`text-sm font-bold ${website.ssl.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {website.ssl.valid ? 'Valid' : 'Invalid'}
+                                  {website.ssl.valid ? 'Valid' : 'Tidak Valid'}
                                 </span>
                               </div>
                             </div>
                             {website.ssl.daysLeft !== null && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Expires in</span>
+                                <span className="text-xs text-zinc-500">Kedaluwarsa dalam</span>
                                 <div className="flex items-center gap-1.5">
                                   <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                                  <span className={`text-sm font-bold ${getSSLColor(website.ssl.daysLeft)}`}>{website.ssl.daysLeft} days</span>
+                                  <span className={`text-sm font-bold ${getSSLColor(website.ssl.daysLeft)}`}>{website.ssl.daysLeft} hari</span>
                                 </div>
                               </div>
                             )}
                             {website.ssl.expiresAt && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Expiry date</span>
+                                <span className="text-xs text-zinc-500">Tanggal kedaluwarsa</span>
                                 <span className="text-xs text-zinc-400 font-mono">{website.ssl.expiresAt}</span>
                               </div>
                             )}
                             {website.ssl.issuer && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Issuer</span>
+                                <span className="text-xs text-zinc-500">Penerbit</span>
                                 <span className="text-xs text-zinc-400">{website.ssl.issuer}</span>
                               </div>
                             )}
                             {website.ssl.daysLeft !== null && (
                               <div>
                                 <div className="h-1.5 w-full bg-zinc-700 rounded-full overflow-hidden mt-2">
-                                  <div
-                                    className={`h-full rounded-full ${getSSLBg(website.ssl.daysLeft)}`}
-                                    style={{ width: `${Math.min(100, (website.ssl.daysLeft / 90) * 100)}%` }}
-                                  />
+                                  <div className={`h-full rounded-full ${getSSLBg(website.ssl.daysLeft)}`}
+                                    style={{ width: `${Math.min(100, (website.ssl.daysLeft / 90) * 100)}%` }} />
                                 </div>
                                 <p className="text-[10px] text-zinc-600 mt-1">dari 90 hari</p>
                               </div>
@@ -333,11 +302,11 @@ export default function SecurityPage() {
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-2">
                             <Shield className="w-4 h-4 text-zinc-400" />
-                            <h4 className="font-bold text-white text-sm uppercase tracking-wider">Security Headers</h4>
+                            <h4 className="font-bold text-white text-sm uppercase tracking-wider">Header Keamanan</h4>
                           </div>
                           {website.headers && (
                             <span className="text-xs text-zinc-500">
-                              {Object.values(website.headers).filter(Boolean).length}/{Object.keys(website.headers).length} passed
+                              {Object.values(website.headers).filter(Boolean).length}/{Object.keys(website.headers).length} lulus
                             </span>
                           )}
                         </div>
@@ -367,7 +336,7 @@ export default function SecurityPage() {
 
                   {website.checkedAt && !website.loading && (
                     <p className="text-[10px] text-zinc-600 mt-4 font-mono">
-                      Last checked: {new Date(website.checkedAt).toLocaleString('id-ID')}
+                      Terakhir diperiksa: {new Date(website.checkedAt).toLocaleString('id-ID')}
                     </p>
                   )}
                 </motion.div>

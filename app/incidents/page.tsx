@@ -1,4 +1,3 @@
-// PATH: app/incidents/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -98,7 +97,7 @@ export default function IncidentsPage() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'log', label: 'Log', icon: <AlertTriangle className="w-4 h-4" /> },
-    { id: 'timeline', label: 'Timeline', icon: <BarChart2 className="w-4 h-4" /> },
+    { id: 'timeline', label: 'Linimasa', icon: <BarChart2 className="w-4 h-4" /> },
     { id: 'sla', label: 'SLA', icon: <Target className="w-4 h-4" /> },
   ];
 
@@ -119,34 +118,32 @@ export default function IncidentsPage() {
         <Header onMenuClick={() => setSidebarOpen(true)} />
 
         <div className="p-4 lg:p-8 max-w-[1600px] mx-auto w-full space-y-6">
-          {/* Header */}
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="text-xl lg:text-2xl font-bold text-white flex items-center gap-2">
                 <AlertTriangle className="w-6 h-6 text-emerald-500" />
-                Incidents
+                Insiden
               </h1>
-              <p className="text-zinc-500 text-xs lg:text-sm mt-0.5">Log, timeline, dan SLA tracking</p>
+              <p className="text-zinc-500 text-xs lg:text-sm mt-0.5">Log, linimasa, dan pelacakan SLA</p>
             </div>
             <button onClick={loadData}
               className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold rounded-xl transition-all text-sm">
               <RefreshCw className="w-4 h-4" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">Perbarui</span>
             </button>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { label: 'Total', value: incidents.length, color: 'text-white' },
-              { label: 'Ongoing', value: ongoing.length, color: ongoing.length > 0 ? 'text-rose-400' : 'text-emerald-400' },
-              { label: 'Resolved', value: resolved.length, color: 'text-emerald-400' },
+              { label: 'Berlangsung', value: ongoing.length, color: ongoing.length > 0 ? 'text-rose-400' : 'text-emerald-400' },
+              { label: 'Teratasi', value: resolved.length, color: 'text-emerald-400' },
               {
-                label: 'Avg Duration',
+                label: 'Rata-rata Durasi',
                 value: resolved.length > 0
                   ? formatDuration(Math.round(resolved.reduce((acc, i) => acc + (i.duration_minutes ?? 0), 0) / resolved.length))
                   : '—',
-                color: 'text-blue-400',
+                color: resolved.length > 0 ? 'text-blue-400' : 'text-zinc-600',
               },
             ].map((card, i) => (
               <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
@@ -157,7 +154,6 @@ export default function IncidentsPage() {
             ))}
           </div>
 
-          {/* Tabs — scrollable di mobile */}
           <div className="overflow-x-auto scrollbar-none -mx-4 px-4">
             <div className="flex items-center gap-1 bg-zinc-900 border border-white/5 rounded-xl p-1 w-fit min-w-full sm:min-w-0">
               {tabs.map((tab) => (
@@ -184,7 +180,7 @@ export default function IncidentsPage() {
                   {incidents.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 bg-emerald-500/5 border border-emerald-500/20 rounded-3xl">
                       <CheckCircle className="w-8 h-8 text-emerald-500 mb-3" />
-                      <p className="text-white font-bold">No Incidents Recorded</p>
+                      <p className="text-white font-bold">Tidak Ada Insiden Tercatat</p>
                       <p className="text-zinc-400 text-sm mt-1">Semua website berjalan normal.</p>
                     </div>
                   ) : (
@@ -193,7 +189,7 @@ export default function IncidentsPage() {
                         <div>
                           <h2 className="text-xs font-bold text-rose-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                            Ongoing ({ongoing.length})
+                            Berlangsung ({ongoing.length})
                           </h2>
                           <div className="space-y-3">
                             {ongoing.map((incident, i) => (
@@ -211,7 +207,7 @@ export default function IncidentsPage() {
                                   </div>
                                   <span className="text-xs font-bold text-rose-400 bg-rose-500/10 px-2 py-1 rounded-full border border-rose-500/20 flex items-center gap-1 shrink-0">
                                     <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                    Ongoing
+                                    Berlangsung
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-3 text-xs text-zinc-500">
@@ -228,7 +224,7 @@ export default function IncidentsPage() {
                         <div>
                           <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                             <CheckCircle className="w-3.5 h-3.5" />
-                            Resolved ({resolved.length})
+                            Teratasi ({resolved.length})
                           </h2>
                           <div className="space-y-3">
                             {resolved.map((incident, i) => (
@@ -245,7 +241,7 @@ export default function IncidentsPage() {
                                     </div>
                                   </div>
                                   <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20 shrink-0">
-                                    Resolved
+                                    Teratasi
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-zinc-500">
@@ -272,7 +268,7 @@ export default function IncidentsPage() {
 
               {activeTab === 'timeline' && (
                 <motion.div key="timeline" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                  <p className="text-xs text-zinc-500">Uptime 30 hari terakhir. Hijau = online, merah = down.</p>
+                  <p className="text-xs text-zinc-500">Uptime 30 hari terakhir. Hijau = aktif, merah = gangguan.</p>
                   {websites.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                       <Globe className="w-8 h-8 text-zinc-700 mb-3" />
@@ -313,7 +309,7 @@ export default function IncidentsPage() {
                         <div className="flex items-center gap-0.5">
                           {slots.map((slot, i) => (
                             <div key={i}
-                              title={`${slot.date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} — ${slot.hasIncident ? 'Ada incident' : 'Normal'}`}
+                              title={`${slot.date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} — ${slot.hasIncident ? 'Ada insiden' : 'Normal'}`}
                               className={`flex-1 h-6 rounded-sm cursor-pointer hover:opacity-80 transition-all ${slot.hasIncident ? 'bg-rose-500/70' : 'bg-emerald-500/70'}`}
                             />
                           ))}
@@ -321,7 +317,7 @@ export default function IncidentsPage() {
                         <div className="flex items-center justify-between mt-1.5">
                           <p className="text-[10px] text-zinc-600">30 hari lalu</p>
                           <p className={`text-[10px] ${incidentDays > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                            {incidentDays > 0 ? `${incidentDays} hari incident` : 'Tidak ada incident'}
+                            {incidentDays > 0 ? `${incidentDays} hari ada insiden` : 'Tidak ada insiden'}
                           </p>
                           <p className="text-[10px] text-zinc-600">Hari ini</p>
                         </div>
@@ -333,7 +329,7 @@ export default function IncidentsPage() {
 
               {activeTab === 'sla' && (
                 <motion.div key="sla" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                  <p className="text-xs text-zinc-500">Set target uptime per website.</p>
+                  <p className="text-xs text-zinc-500">Atur target uptime per website.</p>
                   {websites.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 bg-zinc-900/20 border border-dashed border-white/5 rounded-3xl">
                       <Globe className="w-8 h-8 text-zinc-700 mb-3" />
@@ -405,14 +401,14 @@ export default function IncidentsPage() {
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
                       <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                        <Target className="w-4 h-4 text-emerald-500" /> SLA Summary
+                        <Target className="w-4 h-4 text-emerald-500" /> Ringkasan SLA
                       </h3>
                       <div className="grid grid-cols-3 gap-3">
                         {[
                           { label: 'Tercapai', value: websites.filter((w) => (uptimes[w.id] ?? 100) >= (slaTargets[w.id] ?? 99)).length, color: 'text-emerald-400' },
                           { label: 'Tidak Tercapai', value: websites.filter((w) => (uptimes[w.id] ?? 100) < (slaTargets[w.id] ?? 99)).length, color: 'text-rose-400' },
                           {
-                            label: 'Avg Uptime',
+                            label: 'Rata-rata Uptime',
                             value: `${Object.values(uptimes).length > 0 ? (Object.values(uptimes).reduce((a, b) => a + b, 0) / Object.values(uptimes).length).toFixed(1) : '—'}%`,
                             color: 'text-blue-400',
                           },

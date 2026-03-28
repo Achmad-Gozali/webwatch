@@ -1,4 +1,3 @@
-// PATH: components/Charts/ResponseTimeChart.tsx
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -57,7 +56,6 @@ export default function ResponseTimeChart() {
 
   useEffect(() => {
     loadData();
-
     const channel = supabase
       .channel('response-time-logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'monitor_logs' }, () => {
@@ -66,11 +64,7 @@ export default function ResponseTimeChart() {
       .subscribe();
 
     const handleFocus = () => loadData();
-
-    // Fix: hanya load saat tab aktif (visible), bukan saat disembunyikan
-    const handleVisibility = () => {
-      if (!document.hidden) loadData();
-    };
+    const handleVisibility = () => { if (!document.hidden) loadData(); };
 
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
@@ -90,7 +84,7 @@ export default function ResponseTimeChart() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Activity className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-sm font-bold text-white">Response Time</h3>
+            <h3 className="text-sm font-bold text-white">Waktu Respons</h3>
           </div>
           <p className="text-xs text-zinc-500">Rata-rata semua website</p>
         </div>
@@ -119,7 +113,7 @@ export default function ResponseTimeChart() {
             <YAxis tick={{ fontSize: 9, fill: '#52525b' }} tickLine={false} axisLine={false} unit="ms" />
             <Tooltip
               contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 11 }}
-              formatter={(value: unknown) => [`${value}ms`, 'Avg']}
+              formatter={(value: unknown) => [`${value}ms`, 'Rata-rata']}
             />
             <Area type="monotone" dataKey="avg" stroke={color} strokeWidth={2} fill="url(#rtGrad)" dot={false} />
           </AreaChart>
@@ -127,7 +121,7 @@ export default function ResponseTimeChart() {
       ) : (
         <div className="h-[120px] flex items-center justify-center">
           <p className="text-xs text-zinc-600 text-center">
-            Menunggu data dari Supabase.<br />GitHub Actions akan update tiap 5 menit.
+            Menunggu data dari Supabase.<br />GitHub Actions akan memperbarui setiap 5 menit.
           </p>
         </div>
       )}
